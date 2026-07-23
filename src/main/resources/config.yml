@@ -1,0 +1,10 @@
+# 最大驳回次数
+max-rejects: 5
+# 发布者取消已接取委托的罚款倍率
+cancel-penalty-publisher: 0.5
+# 接收方取消委托的罚款倍率
+cancel-penalty-acceptor: 3.0
+# 委托接取期限（天）
+accept-deadline-days: 7
+# 委托完成期限（天）
+complete-deadline-days: 7

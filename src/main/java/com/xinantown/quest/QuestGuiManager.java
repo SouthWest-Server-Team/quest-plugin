@@ -1,0 +1,240 @@
+package com.xinantown.quest;
+
+import com.xinantown.quest.model.Quest;
+import com.xinantown.quest.model.QuestItem;
+import com.xinantown.quest.model.QuestStatus;
+import net.milkbowl.vault.economy.Economy;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.plugin.RegisteredServiceProvider;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class QuestGuiManager implements Listener {
+
+    private final QuestPlugin plugin;
+    private final QuestDataManager dataManager;
+    private final Map<UUID, Quest> openGuis = new HashMap<>(); // player UUID → quest
+    private Economy econ;
+
+    public QuestGuiManager(QuestPlugin plugin) {
+        this.plugin = plugin;
+        this.dataManager = plugin.getDataManager();
+        RegisteredServiceProvider<Economy> rsp = Bukkit.getServicesManager().getRegistration(Economy.class);
+        if (rsp != null) econ = rsp.getProvider();
+    }
+
+    public void openWarehouse(Player player, Quest quest) {
+        int totalSlots = quest.items().stream().mapToInt(QuestItem::amount).sum();
+        int size = Math.min(54, ((totalSlots / 9) + 1) * 9);
+        if (size < 9) size = 9;
+        Inventory inv = Bukkit.createInventory(null, size, "§8委托仓库 - " + truncate(quest.title(), 20));
+
+        // Load saved warehouse items
+        Map<Integer, ItemStack> saved = plugin.getWarehouseManager().load(quest.id());
+        for (var e : saved.entrySet()) {
+            if (e.getKey() < size - 9) inv.setItem(e.getKey(), e.getValue());
+        }
+
+        // Add buttons on last row
+        boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
+        boolean isPublisher = quest.publisherId().equals(player.getUniqueId());
+
+        if (isAcceptor && quest.status() == QuestStatus.ACCEPTED) {
+            inv.setItem(size - 5, createButton(Material.LIME_STAINED_GLASS_PANE, "§a提交委托"));
+            inv.setItem(size - 4, createButton(Material.YELLOW_STAINED_GLASS_PANE, "§e暂存"));
+            inv.setItem(size - 3, createButton(Material.RED_STAINED_GLASS_PANE, "§c取消委托"));
+        }
+        if (isPublisher && quest.status() == QuestStatus.SUBMITTED) {
+            inv.setItem(size - 6, createButton(Material.GREEN_STAINED_GLASS_PANE, "§a同意"));
+            inv.setItem(size - 5, createButton(Material.RED_STAINED_GLASS_PANE, "§c驳回 (" + quest.rejectCount() + "/" + plugin.getConfig().getInt("max-rejects", 5) + ")"));
+            if (quest.rejectCount() >= plugin.getConfig().getInt("max-rejects", 5) - 1) {
+                inv.setItem(size - 4, createButton(Material.BARRIER, "§4终止委托"));
+            }
+        }
+        if (isPublisher) {
+            inv.setItem(size - 1, createButton(Material.BARRIER, "§c取消委托"));
+        }
+
+        openGuis.put(player.getUniqueId(), quest);
+        player.openInventory(inv);
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        Quest quest = openGuis.get(player.getUniqueId());
+        if (quest == null) return;
+        if (!event.getView().getTitle().contains("委托仓库")) return;
+
+        int slot = event.getSlot();
+        int size = event.getInventory().getSize();
+        boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
+        boolean isPublisher = quest.publisherId().equals(player.getUniqueId());
+
+        // Button clicks
+        String btn = getButtonLabel(event.getCurrentItem());
+        if (btn != null) {
+            event.setCancelled(true);
+            if (btn.equals("§a提交委托") && isAcceptor) handleSubmit(player, quest, event.getInventory(), size);
+            else if (btn.equals("§e暂存") && isAcceptor) handleSave(player, quest, event.getInventory(), size);
+            else if (btn.equals("§a同意") && isPublisher) handleApprove(player, quest);
+            else if (btn.startsWith("§c驳回") && isPublisher) handleReject(player, quest);
+            else if (btn.equals("§4终止委托") && isPublisher) handleTerminate(player, quest);
+            else if (btn.equals("§c取消委托") && (isPublisher || isAcceptor)) handleCancel(player, quest);
+            return;
+        }
+
+        // Acceptor can modify inventory; publisher is read-only
+        if (!isAcceptor) { event.setCancelled(true); return; }
+        // Allow clicks in main area only (not button row)
+        if (slot >= size - 9) { event.setCancelled(true); return; }
+    }
+
+    @EventHandler
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) return;
+        Quest quest = openGuis.remove(player.getUniqueId());
+        if (quest == null) return;
+        // Auto-save on close
+        Map<Integer, ItemStack> items = new HashMap<>();
+        for (int i = 0; i < event.getInventory().getSize() - 9; i++) {
+            ItemStack item = event.getInventory().getItem(i);
+            if (item != null && item.getType() != Material.AIR) {
+                items.put(i, item);
+            }
+        }
+        plugin.getWarehouseManager().save(quest.id(), items);
+    }
+
+    private void handleSubmit(Player player, Quest quest, Inventory inv, int size) {
+        Map<Integer, ItemStack> items = new HashMap<>();
+        for (int i = 0; i < size - 9; i++) {
+            ItemStack item = inv.getItem(i);
+            if (item != null && item.getType() != Material.AIR) items.put(i, item);
+        }
+        plugin.getWarehouseManager().save(quest.id(), items);
+        updateQuest(player, quest.submit());
+        player.closeInventory();
+        player.sendMessage("§a委托已提交，等待发布者确认！");
+        Player pub = Bukkit.getPlayer(quest.publisherId());
+        if (pub != null) pub.sendMessage("§a[委托] §6" + quest.title() + " §a已提交，使用 §6/quest warehouse " + quest.id().toString().substring(0, 8) + " §a查看。");
+    }
+
+    private void handleSave(Player player, Quest quest, Inventory inv, int size) {
+        Map<Integer, ItemStack> items = new HashMap<>();
+        for (int i = 0; i < size - 9; i++) {
+            ItemStack item = inv.getItem(i);
+            if (item != null && item.getType() != Material.AIR) items.put(i, item);
+        }
+        plugin.getWarehouseManager().save(quest.id(), items);
+        player.sendMessage("§e仓库已暂存。");
+    }
+
+    private void handleApprove(Player player, Quest quest) {
+        if (econ != null) {
+            econ.depositPlayer(player, quest.deposit()); // publisher deposit back
+            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward()); // acceptor deposit + reward
+        }
+        updateQuest(player, quest.complete());
+        player.closeInventory();
+        player.sendMessage("§a委托已完成！");
+        Player acc = Bukkit.getPlayer(quest.acceptorId());
+        if (acc != null) acc.sendMessage("§a[委托] §6" + quest.title() + " §a已完成！报酬+押金已到账。");
+    }
+
+    private void handleReject(Player player, Quest quest) {
+        int max = plugin.getConfig().getInt("max-rejects", 5);
+        updateQuest(player, quest.reject(max));
+        player.closeInventory();
+        if (quest.rejectCount() + 1 >= max) {
+            player.sendMessage("§c委托已因多次驳回而终止。");
+        } else {
+            player.sendMessage("§e委托已驳回（第 " + (quest.rejectCount() + 1) + " 次），接收方可重新准备。");
+        }
+        Player acc = Bukkit.getPlayer(quest.acceptorId());
+        if (acc != null) acc.sendMessage("§e[委托] §6" + quest.title() + " §e被驳回（第 " + (quest.rejectCount() + 1) + " 次），请重新准备。");
+    }
+
+    private void handleTerminate(Player player, Quest quest) {
+        if (econ != null) {
+            econ.depositPlayer(player, quest.deposit());
+            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit());
+        }
+        updateQuest(player, quest.cancel());
+        player.closeInventory();
+        player.sendMessage("§c委托已终止，双方押金已退还。");
+    }
+
+    private void handleCancel(Player player, Quest quest) {
+        boolean isPublisher = quest.publisherId().equals(player.getUniqueId());
+        if (econ != null) {
+            if (quest.status() == QuestStatus.ACCEPTED) {
+                if (isPublisher) {
+                    double penalty = quest.reward() * plugin.getConfig().getDouble("cancel-penalty-publisher", 0.5);
+                    if (!econ.has(player, penalty)) {
+                        player.sendMessage("§c余额不足，无法支付取消罚款 $" + String.format("%.0f", penalty));
+                        return;
+                    }
+                    econ.withdrawPlayer(player, penalty);
+                    econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), penalty);
+                    econ.depositPlayer(player, quest.deposit()); // 退回押金
+                    player.sendMessage("§c委托已取消，罚款 $" + String.format("%.0f", penalty) + " 已支付，押金已退还。");
+                } else {
+                    // Acceptor cancel
+                    double penalty = quest.reward() * plugin.getConfig().getDouble("cancel-penalty-acceptor", 3.0);
+                    if (!econ.has(player, penalty)) {
+                        player.sendMessage("§c余额不足，无法支付取消罚款 $" + String.format("%.0f", penalty));
+                        return;
+                    }
+                    econ.withdrawPlayer(player, penalty);
+                    econ.depositPlayer(Bukkit.getOfflinePlayer(quest.publisherId()), penalty);
+                    econ.depositPlayer(player, quest.deposit()); // 退回押金
+                    player.sendMessage("§c委托已取消，罚款 $" + String.format("%.0f", penalty) + " 已支付，押金已退还。");
+                }
+            } else {
+                // Not yet accepted — just refund deposit
+                econ.depositPlayer(player, quest.deposit());
+                player.sendMessage("§e委托已撤回，押金已退还。");
+            }
+        }
+        updateQuest(player, quest.cancel());
+        player.closeInventory();
+    }
+
+    private void updateQuest(Player player, Quest updated) {
+        List<Quest> all = new ArrayList<>(dataManager.loadAll());
+        for (int i = 0; i < all.size(); i++) {
+            if (all.get(i).id().equals(updated.id())) { all.set(i, updated); break; }
+        }
+        dataManager.saveAll(all);
+        openGuis.put(player.getUniqueId(), updated);
+    }
+
+    private ItemStack createButton(Material mat, String name) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(name);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private String getButtonLabel(ItemStack item) {
+        if (item == null || !item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) return null;
+        String name = item.getItemMeta().getDisplayName();
+        return name.startsWith("§") ? name : null;
+    }
+
+    private String truncate(String s, int max) {
+        return s.length() > max ? s.substring(0, max) : s;
+    }
+}
