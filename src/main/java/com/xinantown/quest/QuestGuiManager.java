@@ -1,7 +1,6 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Quest;
-import com.xinantown.quest.model.QuestItem;
 import com.xinantown.quest.model.QuestStatus;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
@@ -36,9 +35,7 @@ public class QuestGuiManager implements Listener {
     }
 
     public void openWarehouse(Player player, Quest quest) {
-        int totalSlots = quest.items().stream().mapToInt(QuestItem::amount).sum();
-        int size = Math.min(54, ((totalSlots / 9) + 1) * 9);
-        if (size < 9) size = 9;
+        int size = 54;
         Inventory inv = Bukkit.createInventory(null, size, "§8委托仓库 - " + truncate(quest.title(), 20));
 
         // Load saved warehouse items

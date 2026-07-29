@@ -1,10 +1,14 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Board;
+import com.xinantown.quest.model.Quest;
+import com.xinantown.quest.model.QuestStatus;
+import net.milkbowl.vault.economy.Economy;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
@@ -13,11 +17,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Handles right-click interactions with quest bulletin boards.
@@ -29,15 +33,30 @@ public class BoardClickListener implements Listener {
     private final BoardManager boardManager;
     private final QuestDataManager dataManager;
     private final QuestPlugin plugin;
+    private Economy econ;
 
     // Pending accept confirmations
     private final Map<UUID, PendingAccept> pendingAccepts = new HashMap<>();
-    // Display rotation: groupId → current index
+    // Display rotation
     private final Map<Integer, Integer> rotationIndex = new HashMap<>();
     private int rotationSeconds = 30;
     private BukkitTask displayTask;
+    // Chat-guided creation state
+    private final Map<UUID, CreationState> creationStates = new HashMap<>();
 
     private record PendingAccept(UUID questId, long expireTime) {}
+
+    /** Tracks the state of chat-guided quest creation. */
+    private static class CreationState {
+        String type;       // "material" or "build"
+        String title;      // auto for material, user for build
+        String desc;       // material description or build description
+        int amount;        // only for material
+        double reward;
+        double deposit;
+        int step;          // 0=not started, 1-4=waiting input, 5=await confirm
+        boolean isTown;
+    }
 
     public BoardClickListener(QuestPlugin plugin, BoardManager boardManager,
                                QuestDataManager dataManager) {
@@ -45,6 +64,8 @@ public class BoardClickListener implements Listener {
         this.boardManager = boardManager;
         this.dataManager = dataManager;
         this.rotationSeconds = plugin.getConfig().getInt("board-rotation-seconds", 30);
+        RegisteredServiceProvider<Economy> rsp = Bukkit.getServicesManager().getRegistration(Economy.class);
+        if (rsp != null) this.econ = rsp.getProvider();
     }
 
     public void start() {
@@ -150,32 +171,187 @@ public class BoardClickListener implements Listener {
         player.sendMessage(" ");
 
         TextComponent publishBtn = new TextComponent("§a§l[发布委托]");
-        publishBtn.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/quest create "));
+        publishBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest publish"));
         publishBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7点击后输入 §e/quest create §7补全参数\n§7格式: <标题> <物品:数量,...> <报酬> [押金]\n§7示例: /quest create 钻石委托 DIAMOND:64 500").create()));
+                new ComponentBuilder("§7点击开始聊天引导发布流程").create()));
         player.spigot().sendMessage(publishBtn);
-        player.sendMessage("  §7→ 创建新的委托（个人/城邦）。点击后补全参数即可。");
-
-        player.spigot().sendMessage(new TextComponent(" "));
+        player.sendMessage("  §7→ 聊天栏逐步引导发布（材料/建筑委托）。");
+        player.sendMessage(" ");
 
         TextComponent myBtn = new TextComponent("§e§l[我的委托]");
         myBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest my"));
-        myBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7查看自己发布的所有委托及状态").create()));
         player.spigot().sendMessage(myBtn);
-        player.sendMessage("  §7→ 查看自己发布的委托（含进行中、已完成等状态）。");
-
-        player.spigot().sendMessage(new TextComponent(" "));
-
-        TextComponent cancelBtn = new TextComponent("§c§l[撤回委托]");
-        cancelBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest my"));
-        cancelBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7查看我的委托后，在仓库GUI中取消").create()));
-        player.spigot().sendMessage(cancelBtn);
-        player.sendMessage("  §7→ 在\"我的委托\"中打开仓库，点击\"取消委托\"按钮撤回。");
+        player.sendMessage("  §7→ 查看自己发布的委托及状态。");
 
         player.sendMessage(" ");
-        player.sendMessage("§8提示：点击上方§a§l绿色§8或§e§l黄色§8文字按钮操作，§7灰色为说明文字。");
+        player.sendMessage("§8提示：点击上方§a§l绿色§8或§e§l黄色§8文字按钮操作。");
+    }
+
+    // ==================== Guided creation ====================
+
+    /** Start guided creation: show type selector. Called by /quest publish */
+    public void startPublish(Player player) {
+        player.sendMessage("§6=== 选择委托类型 ===");
+
+        TextComponent matBtn = new TextComponent("§a§l[材料委托]");
+        matBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create mat"));
+        matBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new ComponentBuilder("§7材料: 橡木 × 64").create()));
+        player.spigot().sendMessage(matBtn);
+
+        TextComponent buildBtn = new TextComponent("§b§l[建筑委托]");
+        buildBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create build"));
+        buildBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new ComponentBuilder("§7建筑: 城堡建造").create()));
+        player.spigot().sendMessage(buildBtn);
+    }
+
+    /** Start material creation flow. */
+    public void startMaterialCreation(Player player) {
+        CreationState s = new CreationState();
+        s.type = "material";
+        s.step = 1;
+        creationStates.put(player.getUniqueId(), s);
+        player.sendMessage("§e[第1步] §7请输入材料描述（例: §f橡木原木§7）：");
+    }
+
+    /** Start build creation flow. */
+    public void startBuildCreation(Player player) {
+        CreationState s = new CreationState();
+        s.type = "build";
+        s.step = 1;
+        creationStates.put(player.getUniqueId(), s);
+        player.sendMessage("§e[第1步] §7请输入委托标题（例: §f城堡建造§7）：");
+    }
+
+    /** Handle each step of chat input for creation. */
+    public void handleCreationInput(Player player, String input) {
+        UUID id = player.getUniqueId();
+        CreationState s = creationStates.get(id);
+        if (s == null) return;
+
+        if (s.type.equals("material")) {
+            handleMaterialInput(player, s, input);
+        } else {
+            handleBuildInput(player, s, input);
+        }
+    }
+
+    private void handleMaterialInput(Player player, CreationState s, String input) {
+        switch (s.step) {
+            case 1 -> {
+                s.desc = input;
+                s.step = 2;
+                player.sendMessage("§e[第2步] §7请输入需求数量（例: §f64§7）：");
+            }
+            case 2 -> {
+                try { s.amount = Integer.parseInt(input); } catch (NumberFormatException e) {
+                    player.sendMessage("§c请输入有效数字。"); return;
+                }
+                s.step = 3;
+                player.sendMessage("§e[第3步] §7请输入报酬金额（例: §f500§7）：");
+            }
+            case 3 -> {
+                try { s.reward = Double.parseDouble(input); } catch (NumberFormatException e) {
+                    player.sendMessage("§c请输入有效数字。"); return;
+                }
+                s.step = 4;
+                player.sendMessage("§e[第4步] §7请输入押金（回车默认=报酬 §f$" + String.format("%.0f", s.reward) + "§7）：");
+            }
+            case 4 -> {
+                if (input.isEmpty()) { s.deposit = s.reward; }
+                else { try { s.deposit = Double.parseDouble(input); } catch (NumberFormatException e) {
+                    player.sendMessage("§c请输入有效数字或回车跳过。"); return; } }
+                s.title = s.desc + " × " + s.amount;
+                s.step = 5;
+                showConfirm(player, s);
+            }
+        }
+    }
+
+    private void handleBuildInput(Player player, CreationState s, String input) {
+        switch (s.step) {
+            case 1 -> {
+                s.title = input;
+                s.step = 2;
+                player.sendMessage("§e[第2步] §7请输入建筑描述（例: §f建造一座城堡§7）：");
+            }
+            case 2 -> {
+                s.desc = input;
+                s.step = 3;
+                player.sendMessage("§e[第3步] §7请输入报酬金额（例: §f500§7）：");
+            }
+            case 3 -> {
+                try { s.reward = Double.parseDouble(input); } catch (NumberFormatException e) {
+                    player.sendMessage("§c请输入有效数字。"); return;
+                }
+                s.step = 4;
+                player.sendMessage("§e[第4步] §7请输入押金（回车默认=报酬 §f$" + String.format("%.0f", s.reward) + "§7）：");
+            }
+            case 4 -> {
+                if (input.isEmpty()) { s.deposit = s.reward; }
+                else { try { s.deposit = Double.parseDouble(input); } catch (NumberFormatException e) {
+                    player.sendMessage("§c请输入有效数字或回车跳过。"); return; } }
+                s.step = 5;
+                showConfirm(player, s);
+            }
+        }
+    }
+
+    private void showConfirm(Player player, CreationState s) {
+        String typeLabel = s.type.equals("material") ? "§a材料委托" : "§b建筑委托";
+        player.sendMessage("§6======== 委托确认 ========");
+        player.sendMessage("§7类型: " + typeLabel);
+        player.sendMessage("§7标题: §f" + s.title);
+        player.sendMessage("§7描述: §f" + s.desc);
+        player.sendMessage("§7报酬: §e$" + String.format("%.0f", s.reward));
+        player.sendMessage("§7押金: §e$" + String.format("%.0f", s.deposit));
+        player.sendMessage(" ");
+
+        TextComponent confirmBtn = new TextComponent("§a§l[确认发布]");
+        confirmBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create confirm"));
+        player.spigot().sendMessage(confirmBtn);
+
+        TextComponent cancelBtn = new TextComponent("§c§l[取消]");
+        cancelBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create cancel"));
+        player.spigot().sendMessage(cancelBtn);
+    }
+
+    /** Final confirm + create quest. */
+    public void confirmPublish(Player player) {
+        CreationState s = creationStates.get(player.getUniqueId());
+        if (s == null || s.step != 5) return;
+
+        if (econ == null) { player.sendMessage("§c经济系统未就绪。"); creationStates.remove(player.getUniqueId()); return; }
+        double total = s.deposit + s.reward;
+        if (!econ.has(player, total)) {
+            player.sendMessage("§c余额不足！需要 $" + String.format("%.0f", total)); creationStates.remove(player.getUniqueId()); return;
+        }
+        econ.withdrawPlayer(player, total);
+
+        long now = System.currentTimeMillis();
+        int acceptDays = plugin.getConfig().getInt("accept-deadline-days", 7);
+        int completeDays = plugin.getConfig().getInt("complete-deadline-days", 7);
+        Quest quest = new Quest(UUID.randomUUID(), s.title, player.getUniqueId(), player.getName(),
+                s.isTown, s.type, s.desc, s.reward, s.deposit,
+                now + 86400000L * acceptDays, now + 86400000L * completeDays,
+                QuestStatus.OPEN, null, null, false, 0);
+
+        List<Quest> all = new ArrayList<>(dataManager.loadAll());
+        all.add(quest);
+        dataManager.saveAll(all);
+        creationStates.remove(player.getUniqueId());
+
+        player.sendMessage("§a委托 §6" + s.title + " §a已创建！押金+报酬: $" + String.format("%.0f", total));
+    }
+
+    public void cancelPublish(Player player) {
+        creationStates.remove(player.getUniqueId());
+        player.sendMessage("§e已取消发布。");
+    }
+
+    public boolean hasCreationState(Player player) {
+        return creationStates.containsKey(player.getUniqueId());
     }
 
     // ==================== Display board info + accept ====================
@@ -210,7 +386,7 @@ public class BoardClickListener implements Listener {
         player.sendMessage("§6======== 委托信息 ========");
         String type = quest.isTownQuest() ? "§b[城邦]" : "§a[个人]";
         player.sendMessage(type + " §6" + quest.title() + " §7- " + quest.publisherName());
-        player.sendMessage("§7需求: " + formatItems(quest.items()));
+        player.sendMessage("§7需求: §f" + quest.description());
         player.sendMessage("§7报酬: §e$" + String.format("%.0f", quest.reward()));
         player.sendMessage("§7押金: §e$" + String.format("%.0f", quest.deposit()));
         player.sendMessage(" ");
@@ -248,13 +424,12 @@ public class BoardClickListener implements Listener {
         }
 
         // Economy
-        var econ = org.bukkit.Bukkit.getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
         if (econ == null) { player.sendMessage("§c经济系统未就绪。"); return; }
         double deposit = quest.deposit();
-        if (!econ.getProvider().has(player, deposit)) {
+        if (!econ.has(player, deposit)) {
             player.sendMessage("§c余额不足！需要支付押金 $" + String.format("%.0f", deposit)); return;
         }
-        econ.getProvider().withdrawPlayer(player, deposit);
+        econ.withdrawPlayer(player, deposit);
 
         // Accept
         long newDeadline = System.currentTimeMillis() + 86400000L * plugin.getConfig().getInt("complete-deadline-days", 7);
@@ -270,15 +445,20 @@ public class BoardClickListener implements Listener {
 
         // Give scroll
         QuestScroll scroll = new QuestScroll(plugin);
-        player.getInventory().setItemInMainHand(scroll.createScroll(quest.id(), quest.title()));
+        player.getInventory().setItemInMainHand(
+                scroll.createScroll(quest.id(), quest.title(), quest.description()));
 
         player.sendMessage("§a已接取委托 §6" + quest.title() + "§a！押金: $" + String.format("%.0f", deposit));
         player.sendMessage("§e手持委托卷右键打开仓库。");
     }
 
-    private String formatItems(java.util.List<com.xinantown.quest.model.QuestItem> items) {
-        return items.stream()
-                .map(i -> i.amount() + "x" + i.material())
-                .collect(java.util.stream.Collectors.joining(", "));
+
+    @EventHandler
+    public void onChat(org.bukkit.event.player.AsyncPlayerChatEvent event) {
+        Player player = event.getPlayer();
+        if (!creationStates.containsKey(player.getUniqueId())) return;
+        event.setCancelled(true);
+        // Run on main thread
+        Bukkit.getScheduler().runTask(plugin, () -> handleCreationInput(player, event.getMessage()));
     }
 }

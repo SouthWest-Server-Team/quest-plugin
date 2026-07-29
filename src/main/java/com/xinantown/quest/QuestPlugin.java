@@ -48,4 +48,5 @@ public class QuestPlugin extends JavaPlugin {
     public QuestGuiManager getGuiManager() { return guiManager; }
     public ViolationManager getViolationManager() { return violationManager; }
     public BoardManager getBoardManager() { return boardManager; }
+    public BoardClickListener getBoardClickListener() { return boardClickListener; }
 }

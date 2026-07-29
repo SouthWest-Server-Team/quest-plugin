@@ -1,7 +1,6 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Quest;
-import com.xinantown.quest.model.QuestItem;
 import com.xinantown.quest.model.QuestStatus;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -45,20 +44,14 @@ public class QuestDataManager {
             ConfigurationSection q = sec.getConfigurationSection(key);
             if (q == null) continue;
             try {
-                List<QuestItem> items = new ArrayList<>();
-                ConfigurationSection itemsSec = q.getConfigurationSection("items");
-                if (itemsSec != null) {
-                    for (String ik : itemsSec.getKeys(false)) {
-                        items.add(new QuestItem(ik, itemsSec.getInt(ik)));
-                    }
-                }
                 result.add(new Quest(
                         UUID.fromString(key),
                         q.getString("title", ""),
                         UUID.fromString(q.getString("publisherId", "")),
                         q.getString("publisherName", ""),
                         q.getBoolean("isTownQuest", false),
-                        items,
+                        q.getString("questType", "material"),
+                        q.getString("description", ""),
                         q.getDouble("reward", 0),
                         q.getDouble("deposit", 0),
                         q.getLong("acceptDeadline", 0),
@@ -84,8 +77,8 @@ public class QuestDataManager {
             qs.set("publisherId", q.publisherId().toString());
             qs.set("publisherName", q.publisherName());
             qs.set("isTownQuest", q.isTownQuest());
-            ConfigurationSection is = qs.createSection("items");
-            for (QuestItem qi : q.items()) is.set(qi.material(), qi.amount());
+            qs.set("questType", q.questType());
+            qs.set("description", q.description());
             qs.set("reward", q.reward());
             qs.set("deposit", q.deposit());
             qs.set("acceptDeadline", q.acceptDeadline());

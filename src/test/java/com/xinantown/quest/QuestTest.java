@@ -1,7 +1,6 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Quest;
-import com.xinantown.quest.model.QuestItem;
 import com.xinantown.quest.model.QuestStatus;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +17,7 @@ class QuestTest {
 
     private Quest newQuest() {
         return new Quest(UUID.randomUUID(), "测试委托", pubId, "TownA",
-                true, List.of(new QuestItem("DIAMOND", 64)), 1000.0, 500.0,
+                true, "material", "钻石 × 64", 1000.0, 500.0,
                 future, future + 3600000, QuestStatus.OPEN,
                 null, null, false, 0);
     }
@@ -44,6 +43,13 @@ class QuestTest {
         assertEquals(5, r.rejectCount());
     }
 
-    @Test void expired_openQuest() { assertTrue(new Quest(UUID.randomUUID(), "t", pubId, "A", true, List.of(), 1, 1, 0, 0, QuestStatus.OPEN, null, null, false, 0).isExpired()); }
-    @Test void notExpired_acceptedWithFutureDeadline() { assertFalse(newQuest().accept(accId, "B", true, future).isExpired()); }
+    @Test void expired_openQuest() {
+        assertTrue(new Quest(UUID.randomUUID(), "t", pubId, "A", true,
+                "material", "x", 1, 1, 0, 0, QuestStatus.OPEN,
+                null, null, false, 0).isExpired());
+    }
+
+    @Test void notExpired_acceptedWithFutureDeadline() {
+        assertFalse(newQuest().accept(accId, "B", true, future).isExpired());
+    }
 }

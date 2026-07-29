@@ -25,7 +25,7 @@ public final class QuestScroll {
     }
 
     /** Create a scroll linked to a quest. */
-    public ItemStack createScroll(UUID questId, String questTitle) {
+    public ItemStack createScroll(UUID questId, String questTitle, String questDesc) {
         ItemStack item = new ItemStack(MATERIAL);
         ItemMeta meta = item.getItemMeta();
         meta.setDisplayName("§6委托卷");
@@ -36,6 +36,7 @@ public final class QuestScroll {
 
         List<String> lore = new ArrayList<>();
         lore.add("§7委托: §e" + questTitle);
+        lore.add("§7" + questDesc);
         lore.add("");
         lore.add("§7右键打开委托仓库");
         meta.setLore(lore);
