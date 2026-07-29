@@ -500,6 +500,13 @@ public class BoardClickListener implements Listener {
 
         player.sendMessage("§a已接取委托 §6" + quest.title() + "§a！押金: $" + String.format("%.0f", deposit));
         player.sendMessage("§e手持委托卷右键打开仓库。");
+
+        // Immediately refresh display boards
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            var qs = dataManager.loadAll().stream()
+                    .filter(q -> q.status() == QuestStatus.OPEN).toList();
+            rotateDisplays(qs);
+        });
     }
 
 
