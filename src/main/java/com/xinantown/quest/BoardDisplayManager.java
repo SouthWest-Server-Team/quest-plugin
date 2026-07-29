@@ -200,6 +200,7 @@ public class BoardDisplayManager {
         sign.setLine(2, "");
         sign.setLine(3, "");
         sign.getPersistentDataContainer().remove(questIdKey);
+        sign.setGlowingText(true);
         sign.update();
     }
 
@@ -217,6 +218,7 @@ public class BoardDisplayManager {
         sign.setLine(2, "§7报酬: §e$" + String.format("%.0f", quest.reward()));
         sign.setLine(3, "§7右键接取");
         sign.getPersistentDataContainer().set(questIdKey, PersistentDataType.STRING, quest.id().toString());
+        sign.setGlowingText(true);
         sign.update();
     }
 

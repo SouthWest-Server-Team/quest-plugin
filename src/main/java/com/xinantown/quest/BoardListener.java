@@ -53,6 +53,7 @@ public class BoardListener implements Listener {
             sign.setLine(1, label);
             sign.setLine(2, type.equals("center") ? "§7右键发布/管理" : "§7右键查看委托");
             sign.setLine(3, "");
+            sign.setGlowingText(true);
             sign.update();
         }
 
