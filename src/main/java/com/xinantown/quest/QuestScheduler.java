@@ -41,7 +41,12 @@ public class QuestScheduler implements Runnable {
 
                 // Notify parties
                 notify(q.publisherId(), "§c[委托] §6" + q.title() + " §c已过期取消。");
-                if (q.acceptorId() != null) notify(q.acceptorId(), "§c[委托] §6" + q.title() + " §c已过期取消。");
+                if (q.acceptorId() != null) {
+                    notify(q.acceptorId(), "§c[委托] §6" + q.title() + " §c已过期取消。");
+                    // Remove scroll from online acceptor
+                    Player acc = Bukkit.getPlayer(q.acceptorId());
+                    if (acc != null) removeScroll(acc, q);
+                }
 
                 // Apply penalty
                 if (q.status() == QuestStatus.OPEN) {
@@ -72,5 +77,18 @@ public class QuestScheduler implements Runnable {
     private void notify(java.util.UUID uuid, String msg) {
         Player p = Bukkit.getPlayer(uuid);
         if (p != null) p.sendMessage(msg);
+    }
+
+    private void removeScroll(Player player, com.xinantown.quest.model.Quest quest) {
+        QuestScroll scroll = new QuestScroll(plugin);
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            var item = player.getInventory().getItem(i);
+            if (scroll.isScroll(item)) {
+                var id = scroll.getQuestId(item);
+                if (id != null && id.equals(quest.id())) {
+                    player.getInventory().setItem(i, null);
+                }
+            }
+        }
     }
 }
