@@ -46,4 +46,9 @@ public class WarehouseManager {
             logger.severe("Failed to save warehouse: " + ex.getMessage());
         }
     }
+
+    public void delete(UUID questId) {
+        File f = new File(folder, questId + ".yml");
+        if (f.exists()) f.delete();
+    }
 }

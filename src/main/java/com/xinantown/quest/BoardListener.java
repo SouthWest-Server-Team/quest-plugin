@@ -5,6 +5,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
 import org.bukkit.block.data.Directional;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -31,12 +32,11 @@ public class BoardListener implements Listener {
     }
 
     /** Place a wall sign on the block the player is looking at, facing the player. */
-    public static Location placeWallSign(Location lookAt, BlockFace facing) {
+    public static Location placeWallSign(Location lookAt, BlockFace facing, String type) {
         Block block = lookAt.getBlock();
         Block signBlock = block.getRelative(facing);
 
         if (!signBlock.getType().isAir()) {
-            // Try to place on the block itself
             signBlock = block;
         }
 
@@ -46,7 +46,16 @@ public class BoardListener implements Listener {
             signBlock.setBlockData(dir);
         }
 
-        // Create hologram above the sign
+        // Set sign text
+        if (signBlock.getState() instanceof Sign sign) {
+            String label = type.equals("center") ? "§6中央告示牌" : "§b显示告示牌";
+            sign.setLine(0, "§8[委托栏]");
+            sign.setLine(1, label);
+            sign.setLine(2, type.equals("center") ? "§7右键发布/管理" : "§7右键查看委托");
+            sign.setLine(3, "");
+            sign.update();
+        }
+
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
                 "hologram create line " + (signBlock.getX() + 0.5) + " " + (signBlock.getY() + 1.3) + " " + (signBlock.getZ() + 0.5)
                         + " \"§6[委托栏]\"");

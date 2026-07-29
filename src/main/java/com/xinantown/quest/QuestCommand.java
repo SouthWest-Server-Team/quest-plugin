@@ -191,7 +191,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         if (target == null || target.getType().isAir()) { player.sendMessage("§c请对准一个方块！"); return true; }
 
         org.bukkit.block.BlockFace facing = player.getFacing().getOppositeFace();
-        org.bukkit.Location signLoc = BoardListener.placeWallSign(target.getLocation(), facing);
+        org.bukkit.Location signLoc = BoardListener.placeWallSign(target.getLocation(), facing, type);
         Board board = boardManager.createBoard(signLoc, type);
         player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！ID: " + board.id());
         return true;
@@ -219,6 +219,8 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         return switch (args[1].toLowerCase()) {
             case "mat" -> { plugin.getBoardClickListener().startMaterialCreation(player); yield true; }
             case "build" -> { plugin.getBoardClickListener().startBuildCreation(player); yield true; }
+            case "tmat" -> { plugin.getBoardClickListener().startTownMaterialCreation(player); yield true; }
+            case "tbuild" -> { plugin.getBoardClickListener().startTownBuildCreation(player); yield true; }
             case "confirm" -> { plugin.getBoardClickListener().confirmPublish(player); yield true; }
             case "cancel" -> { plugin.getBoardClickListener().cancelPublish(player); yield true; }
             default -> true;

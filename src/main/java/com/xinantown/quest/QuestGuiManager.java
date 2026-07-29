@@ -13,6 +13,7 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import java.util.*;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
 import java.util.*;
@@ -160,13 +161,26 @@ public class QuestGuiManager implements Listener {
     }
 
     private void handleApprove(Player player, Quest quest) {
+        // Transfer warehouse items to publisher
+        Map<Integer, ItemStack> items = plugin.getWarehouseManager().load(quest.id());
+        if (!items.isEmpty() && player.isOnline()) {
+            for (ItemStack item : items.values()) {
+                Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
+                for (ItemStack overflow : leftover.values()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), overflow);
+                }
+            }
+            plugin.getWarehouseManager().delete(quest.id());
+        }
+
         if (econ != null) {
-            econ.depositPlayer(player, quest.deposit()); // publisher deposit back
-            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward()); // acceptor deposit + reward
+            econ.depositPlayer(player, quest.deposit());
+            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward());
         }
         updateQuest(player, quest.complete());
+        removeScroll(player, quest);
         player.closeInventory();
-        player.sendMessage("§a委托已完成！");
+        player.sendMessage("§a委托已完成！物品已发放到你的背包。");
         Player acc = Bukkit.getPlayer(quest.acceptorId());
         if (acc != null) acc.sendMessage("§a[委托] §6" + quest.title() + " §a已完成！报酬+押金已到账。");
     }
@@ -213,6 +227,7 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit());
         }
         updateQuest(player, quest.cancel());
+        removeScroll(player, quest);
         player.closeInventory();
         player.sendMessage("§c委托已终止，双方押金已退还。");
     }
@@ -250,6 +265,7 @@ public class QuestGuiManager implements Listener {
             }
         }
         updateQuest(player, quest.cancel());
+        removeScroll(player, quest);
         player.closeInventory();
     }
 
@@ -278,5 +294,18 @@ public class QuestGuiManager implements Listener {
 
     private String truncate(String s, int max) {
         return s.length() > max ? s.substring(0, max) : s;
+    }
+
+    private void removeScroll(Player player, Quest quest) {
+        QuestScroll scroll = new QuestScroll(plugin);
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            ItemStack item = player.getInventory().getItem(i);
+            if (scroll.isScroll(item)) {
+                UUID id = scroll.getQuestId(item);
+                if (id != null && id.equals(quest.id())) {
+                    player.getInventory().setItem(i, null);
+                }
+            }
+        }
     }
 }

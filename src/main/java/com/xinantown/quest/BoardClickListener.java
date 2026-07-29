@@ -84,8 +84,6 @@ public class BoardClickListener implements Listener {
     // ==================== Display rotation ====================
 
     private void rotateDisplays(java.util.List<com.xinantown.quest.model.Quest> quests) {
-        if (quests.isEmpty()) return;
-
         long seconds = System.currentTimeMillis() / 1000;
 
         for (Board board : boardManager.getDisplayBoards()) {
@@ -93,19 +91,36 @@ public class BoardClickListener implements Listener {
             java.util.List<Board> groupBoards = boardManager.getGroupBoards(groupId);
             if (groupBoards.isEmpty()) groupBoards = java.util.List.of(board);
 
+            int position = groupBoards.indexOf(board);
+
+            // Clear boards that exceed available quests
+            if (quests.isEmpty() || position >= quests.size()) {
+                clearSign(board);
+                continue;
+            }
+
             int index = rotationIndex.getOrDefault(groupId, 0);
-            int questIndex = (index + groupBoards.indexOf(board)) % quests.size();
+            int questIndex = (index + position) % quests.size();
             var quest = quests.get(questIndex);
 
-            // Update sign text
             updateSign(board, quest);
 
-            // Advance rotation index every rotationSeconds
-            if (board.equals(groupBoards.get(0))
-                    && seconds % rotationSeconds == 0) {
+            if (board.equals(groupBoards.get(0)) && seconds % rotationSeconds == 0) {
                 rotationIndex.put(groupId, (index + 1) % quests.size());
             }
         }
+    }
+
+    private void clearSign(Board board) {
+        org.bukkit.World world = Bukkit.getWorld(board.world());
+        if (world == null) return;
+        Block block = world.getBlockAt(board.x(), board.y(), board.z());
+        if (!(block.getState() instanceof Sign sign)) return;
+        sign.setLine(0, "§8[委托栏]");
+        sign.setLine(1, "§7暂无委托");
+        sign.setLine(2, "");
+        sign.setLine(3, "");
+        sign.update();
     }
 
     private void updateSign(Board board, com.xinantown.quest.model.Quest quest) {
@@ -196,32 +211,67 @@ public class BoardClickListener implements Listener {
         TextComponent matBtn = new TextComponent("§a§l[材料委托]");
         matBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create mat"));
         matBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7材料: 橡木 × 64").create()));
+                new ComponentBuilder("§7个人材料委托").create()));
         player.spigot().sendMessage(matBtn);
 
         TextComponent buildBtn = new TextComponent("§b§l[建筑委托]");
         buildBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create build"));
         buildBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7建筑: 城堡建造").create()));
+                new ComponentBuilder("§7个人建筑委托").create()));
         player.spigot().sendMessage(buildBtn);
+
+        TextComponent townMatBtn = new TextComponent("§d§l[城邦材料委托]");
+        townMatBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create tmat"));
+        townMatBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new ComponentBuilder("§7城邦发布材料委托(需市长)").create()));
+        player.spigot().sendMessage(townMatBtn);
+
+        TextComponent townBuildBtn = new TextComponent("§5§l[城邦建筑委托]");
+        townBuildBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest create tbuild"));
+        townBuildBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new ComponentBuilder("§7城邦发布建筑委托(需市长)").create()));
+        player.spigot().sendMessage(townBuildBtn);
     }
 
     /** Start material creation flow. */
     public void startMaterialCreation(Player player) {
-        CreationState s = new CreationState();
-        s.type = "material";
-        s.step = 1;
-        creationStates.put(player.getUniqueId(), s);
-        player.sendMessage("§e[第1步] §7请输入材料描述（例: §f橡木原木§7）：");
+        startCreation(player, "material", false);
     }
 
-    /** Start build creation flow. */
+    public void startTownMaterialCreation(Player player) {
+        if (!checkMayor(player)) return;
+        startCreation(player, "material", true);
+    }
+
     public void startBuildCreation(Player player) {
+        startCreation(player, "build", false);
+    }
+
+    public void startTownBuildCreation(Player player) {
+        if (!checkMayor(player)) return;
+        startCreation(player, "build", true);
+    }
+
+    private boolean checkMayor(Player player) {
+        var town = com.palmergames.bukkit.towny.TownyAPI.getInstance().getTown(player);
+        if (town == null) { player.sendMessage("§c你不属于任何城邦！"); return false; }
+        if (!town.hasMayor() || !town.getMayor().getUUID().equals(player.getUniqueId())) {
+            player.sendMessage("§c只有市长才能发布城邦委托！"); return false;
+        }
+        return true;
+    }
+
+    private void startCreation(Player player, String type, boolean isTown) {
         CreationState s = new CreationState();
-        s.type = "build";
+        s.type = type;
+        s.isTown = isTown;
         s.step = 1;
         creationStates.put(player.getUniqueId(), s);
-        player.sendMessage("§e[第1步] §7请输入委托标题（例: §f城堡建造§7）：");
+        if (type.equals("material")) {
+            player.sendMessage("§e[第1步] §7请输入材料描述（例: §f橡木原木§7）：");
+        } else {
+            player.sendMessage("§e[第1步] §7请输入委托标题（例: §f城堡建造§7）：");
+        }
     }
 
     /** Handle each step of chat input for creation. */
