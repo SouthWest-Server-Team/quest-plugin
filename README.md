@@ -123,11 +123,3 @@ model/
 mvnw clean package
 # 输出: target/Quest-1.0.0-SNAPSHOT.jar
 ```
-
-## ADR
-
-- [ADR-0004](docs/adr/0004-quest-plugin.md) — 委托系统初始设计
-- [ADR-0005](docs/adr/0005-quest-board.md) — 委托栏物理交互系统
-- [ADR-0006](docs/adr/0006-quest-workflow.md) — 委托工作流完善
-- [ADR-0007](docs/adr/0007-quest-display.md) — 显示告示牌改进（过滤+去重+加权+事件驱动）
-- [ADR-0008](docs/adr/0008-quest-scroll-lifecycle.md) — 卷轴生命周期提示
