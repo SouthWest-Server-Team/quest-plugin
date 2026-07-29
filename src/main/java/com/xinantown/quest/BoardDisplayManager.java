@@ -95,15 +95,7 @@ public class BoardDisplayManager {
         var groups = boardManager.getDisplayBoards().stream()
                 .collect(Collectors.groupingBy(Board::groupId));
         for (int groupId : groups.keySet()) {
-            var filter = groups.get(groupId).stream()
-                    .map(Board::questFilter).filter(f -> f != QuestFilter.ALL)
-                    .findFirst().orElse(QuestFilter.ALL);
-            var filtered = openQuests.stream()
-                    .filter(q -> filter == QuestFilter.ALL
-                            || (filter == QuestFilter.PERSONAL && !q.isTownQuest())
-                            || (filter == QuestFilter.TOWN && q.isTownQuest()))
-                    .toList();
-            groupQuestQueue.put(groupId, new ArrayList<>(replicateWeighted(filtered)));
+            groupQuestQueue.put(groupId, new ArrayList<>(replicateWeighted(openQuests)));
         }
     }
 
@@ -172,10 +164,14 @@ public class BoardDisplayManager {
 
             for (int i = 0; i < sorted.size(); i++) {
                 Board board = sorted.get(i);
-                // Find first unused quest in this board's filtered queue
-                var available = queue.stream()
+                // Per-board filter: respect questFilter
+                var filtered = queue.stream()
+                        .filter(q -> board.questFilter() == QuestFilter.ALL
+                                || (board.questFilter() == QuestFilter.PERSONAL && !q.isTownQuest())
+                                || (board.questFilter() == QuestFilter.TOWN && q.isTownQuest()))
                         .filter(q -> !usedQuestIds.contains(q.id()))
-                        .skip(i).findFirst().orElse(null);
+                        .toList();
+                var available = filtered.isEmpty() ? null : filtered.get(0);
                 if (available != null) {
                     usedQuestIds.add(available.id());
                     boardQuestMap.put(board.id(), available);
