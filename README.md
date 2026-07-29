@@ -8,13 +8,16 @@ Towny + CasusBelli + Vault 集成委托系统。玩家和城邦发布材料/建�
 - **建筑委托**：发布方提供建筑描述，接收方施工完成后提交
 - **个人委托**：玩家发布，个人或城邦接取
 - **城邦委托**：市长发布，仅城邦市长接取
-- **委托栏**：物理告示牌交互——管理员放置中央/显示告示牌，玩家右键操作
-- **聊天引导发布**：点击[发布委托]→逐步输入材料/建筑描述→报酬→押金→确认创建
-- **委托卷**：接取后获得 BOOK，右键打开共享仓库 GUI
-- **共享仓库**：54 格 GUI，接收方放物品/提交，发布方查看/审核
-- **同意确认**：发布方点击"同意"需二次确认
-- **驳回理由**：点击"驳回"→聊天栏输入理由→通知接收方
-- **轮播显示**：显示告示牌每 30s 轮播可接取委托，相邻告示牌联动分组
+- **委托栏**：物理告示牌交互——管理员放置中央/显示告示牌，支持类型过滤（个人/城邦/全部）
+- **聊天引导发布**：点击[发布委托]→选择类型→4步逐步输入→确认创建
+- **显示告示牌**：30s 轮播 + 相邻 BFS 分组 + 全局去重（同一委托仅一块牌）
+- **热卖加权**：即将超时委托展示频率更高（可配置阈值和副本数）
+- **事件驱动刷新**：委托创建/接取/完成时自动刷新所有告示牌
+- **告示牌荧光**：所有委托栏告示牌文字发光效果
+- **委托卷**：接取后获得 BOOK，右键打开仓库，Lore 实时显示状态+剩余时间
+- **`/quest my`**：按状态排序（待确认→进行中→可接取→已完成），可点击直接打开仓库
+- **提交通知**：发布方收到可点击链接直接打开仓库确认
+- **共享仓库**：54 格 GUI，完成/取消后自动关闭仓库防误操作
 - **取消惩罚**：发布方 0.5× / 接取方 3×（可配）
 - **违约联动**：CasusBelli 宣战→双方违约，累计 1天×N
 - **超时违约**：期限内未完成→违约+赔付 3×
@@ -68,7 +71,11 @@ cancel-penalty-publisher: 0.5   # 发布方取消罚款倍率
 cancel-penalty-acceptor: 3.0    # 接收方取消罚款倍率
 accept-deadline-days: 7         # 接取期限
 complete-deadline-days: 7       # 完成期限
-board-rotation-seconds: 30      # 显示告示牌轮播间隔
+board-rotation-seconds: 30      # 轮播间隔
+board-urgent-hours: 1           # 热卖: 紧急阈值(小时)
+board-warn-hours: 24            # 热卖: 预警阈值(小时)
+board-urgent-copies: 3          # 热卖: 紧急副本数
+board-warn-copies: 2            # 热卖: 预警副本数
 ```
 
 ## 架构
@@ -76,13 +83,14 @@ board-rotation-seconds: 30      # 显示告示牌轮播间隔
 ```
 QuestPlugin (入口)
   ├── BoardMenuHandler       — 中央告示牌聊天菜单 + 聊天引导发布
-  ├── BoardDisplayManager    — 显示告示牌轮播 + 分组 + boardQuestMap
+  ├── BoardDisplayManager    — 显示告示牌轮播 + 分组 + 全局去重 + 热卖加权
   ├── BoardAcceptHandler     — 接取确认 + 委托卷发放 + 右键仓库
-  ├── BoardListener          — 告示牌防破坏 + 全息浮标
+  ├── BoardListener          — 告示牌防破坏 + 全息浮标 + 重启恢复
   ├── BoardManager           — 告示牌 CRUD + 分组 BFS
-  ├── QuestCommand           — 命令行
-  ├── QuestGuiManager        — 共享仓库 GUI + 聊天监听(驳回理由)
-  ├── QuestScheduler         — 过期检测 + 超时违约
+  ├── DisplayUpdateListener  — 事件驱动刷新（监听 QuestEvent 自动更新告示牌）
+  ├── QuestCommand           — 命令行 + `/quest my` 排序+可点击
+  ├── QuestGuiManager        — 共享仓库 GUI + 聊天监听(驳回理由) + 完成守护
+  ├── QuestScheduler         — 过期检测 + 超时违约 + 卷轴 Lore 实时更新
   ├── QuestDataManager       — YAML 持久化
   ├── ViolationManager       — 违约累计 + 封禁
   ├── CasusBelliListener     — 宣战→违约联动
@@ -116,3 +124,5 @@ mvnw clean package
 - [ADR-0004](docs/adr/0004-quest-plugin.md) — 委托系统初始设计
 - [ADR-0005](docs/adr/0005-quest-board.md) — 委托栏物理交互系统
 - [ADR-0006](docs/adr/0006-quest-workflow.md) — 委托工作流完善
+- [ADR-0007](docs/adr/0007-quest-display.md) — 显示告示牌改进（过滤+去重+加权+事件驱动）
+- [ADR-0008](docs/adr/0008-quest-scroll-lifecycle.md) — 卷轴生命周期提示
