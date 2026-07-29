@@ -37,9 +37,14 @@ Towny + CasusBelli + Vault 集成委托系统。玩家和城邦发布材料/建�
 | `/quest list` | 查看可接取委托 | `quest.use` |
 | `/quest accept <ID>` | 命令行接取委托 | `quest.use` |
 | `/quest warehouse <ID>` | 打开委托仓库 | `quest.use` |
-| `/quest my` | 查看我发布的委托 | `quest.use` |
-| `/quest board create center\|display` | 创建委托栏告示牌 | `quest.admin` |
-| `/quest board remove` | 移除委托栏告示牌 | `quest.admin` |
+| `/quest my` | 查看我发布的委托（按状态排序+可点击打开仓库） | `quest.use` |
+| `/quest board create center` | 创建中央告示牌（发布入口） | `quest.admin` |
+| `/quest board create display` | 创建显示告示牌（全部委托） | `quest.admin` |
+| `/quest board create display personal` | 创建显示告示牌（仅个人委托） | `quest.admin` |
+| `/quest board create display town` | 创建显示告示牌（仅城邦委托） | `quest.admin` |
+| `/quest board remove` | 移除对准的委托栏告示牌 | `quest.admin` |
+
+> 委托发布不通过命令行，改为右键中央告示牌 → 聊天栏按钮逐步引导（材料/建筑/城邦材料/城邦建筑 4 种类型）。
 
 ## 委托栏交互
 
