@@ -4,6 +4,10 @@ import com.xinantown.quest.model.Quest;
 import com.xinantown.quest.model.QuestStatus;
 import com.xinantown.quest.model.Board;
 import com.xinantown.quest.model.QuestFilter;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -148,21 +152,48 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         List<Quest> all = dataManager.loadAll();
         List<Quest> mine = all.stream()
                 .filter(q -> q.publisherId().equals(player.getUniqueId()))
+                .sorted(Comparator.comparingInt(q -> switch (q.status()) {
+                    case SUBMITTED -> 0;
+                    case ACCEPTED -> 1;
+                    case OPEN -> 2;
+                    default -> 3;
+                }))
                 .toList();
 
         if (mine.isEmpty()) { player.sendMessage("§7你还没有发布过委托。"); return true; }
 
         player.sendMessage("§6=== 我的委托 (" + mine.size() + ") ===");
         for (Quest q : mine) {
+            String statusKey = switch (q.status()) {
+                case OPEN -> "OPEN";
+                case ACCEPTED -> "ACCEPTED";
+                case SUBMITTED -> "SUBMITTED";
+                case COMPLETED -> "COMPLETED";
+                case CANCELLED -> "CANCELLED";
+            };
             String status = switch (q.status()) {
                 case OPEN -> "§a可接取";
                 case ACCEPTED -> "§e进行中";
-                case SUBMITTED -> "§b待确认";
+                case SUBMITTED -> "§b待确认 §8(点击查看)";
                 case COMPLETED -> "§7已完成";
                 case CANCELLED -> "§c已取消";
             };
-            player.sendMessage("§6" + q.title() + " §7- " + status
-                    + " §8[" + q.id().toString().substring(0, 8) + "]");
+
+            String shortId = q.id().toString().substring(0, 8);
+            // Make clickable: clicking opens warehouse for non-terminal quests
+            boolean clickable = q.status() != QuestStatus.COMPLETED
+                    && q.status() != QuestStatus.CANCELLED;
+
+            if (clickable) {
+                TextComponent line = new TextComponent("§6" + q.title() + " §7- " + status + " §8[" + shortId + "]");
+                line.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                        "/quest warehouse " + shortId));
+                line.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                        new ComponentBuilder("§7点击打开委托仓库").create()));
+                player.spigot().sendMessage(line);
+            } else {
+                player.sendMessage("§6" + q.title() + " §7- " + status + " §8[" + shortId + "]");
+            }
         }
         return true;
     }
