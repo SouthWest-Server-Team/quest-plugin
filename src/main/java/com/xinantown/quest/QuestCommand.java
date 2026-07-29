@@ -3,6 +3,7 @@ package com.xinantown.quest;
 import com.xinantown.quest.model.Quest;
 import com.xinantown.quest.model.QuestItem;
 import com.xinantown.quest.model.QuestStatus;
+import com.xinantown.quest.model.Board;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -17,11 +18,13 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
     private final QuestPlugin plugin;
     private final QuestDataManager dataManager;
+    private final BoardManager boardManager;
     private Economy econ;
 
     public QuestCommand(QuestPlugin plugin) {
         this.plugin = plugin;
         this.dataManager = plugin.getDataManager();
+        this.boardManager = plugin.getBoardManager();
         setupEconomy();
     }
 
@@ -38,6 +41,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
             case "list" -> handleList(sender);
             case "accept" -> handleAccept(sender, args);
             case "warehouse" -> handleWarehouse(sender, args);
+            case "board" -> handleBoard(sender, args);
             default -> { sendHelp(sender); yield true; }
         };
     }
@@ -220,6 +224,75 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         return items.stream().map(i -> i.amount() + "x" + i.material()).collect(Collectors.joining(", "));
     }
 
+    // ==================== board ====================
+
+    private boolean handleBoard(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("quest.admin")) {
+            sender.sendMessage("§c无权限。"); return true;
+        }
+        if (!(sender instanceof org.bukkit.entity.Player player)) {
+            sender.sendMessage("§c玩家专用命令。"); return true;
+        }
+
+        if (args.length < 2) {
+            player.sendMessage("§c用法: /quest board create <center|display> 或 /quest board remove");
+            return true;
+        }
+
+        return switch (args[1].toLowerCase()) {
+            case "create" -> handleBoardCreate(player, args);
+            case "remove" -> handleBoardRemove(player);
+            default -> {
+                player.sendMessage("§c用法: /quest board create <center|display> 或 /quest board remove");
+                yield true;
+            }
+        };
+    }
+
+    private boolean handleBoardCreate(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage("§c用法: /quest board create <center|display>");
+            return true;
+        }
+
+        String type = args[2].toLowerCase();
+        if (!type.equals("center") && !type.equals("display")) {
+            player.sendMessage("§c类型必须是 center 或 display。");
+            return true;
+        }
+
+        org.bukkit.block.Block target = player.getTargetBlockExact(5);
+        if (target == null || target.getType().isAir()) {
+            player.sendMessage("§c请对准一个方块！");
+            return true;
+        }
+
+        org.bukkit.block.BlockFace facing = player.getFacing().getOppositeFace();
+        BoardListener.placeWallSign(target.getLocation(), player.getFacing().getOppositeFace());
+
+        Board board = boardManager.createBoard(target.getLocation(), type);
+        player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！ID: " + board.id());
+        return true;
+    }
+
+    private boolean handleBoardRemove(Player player) {
+        org.bukkit.block.Block target = player.getTargetBlockExact(5);
+        if (target == null) {
+            player.sendMessage("§c请对准委托栏告示牌！");
+            return true;
+        }
+
+        Board removed = boardManager.removeBoard(target.getLocation());
+        if (removed == null) {
+            player.sendMessage("§c这里没有委托栏告示牌。");
+            return true;
+        }
+
+        target.setType(org.bukkit.Material.AIR);
+        player.sendMessage("§e委托栏已移除。");
+        return true;
+    }
+
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§6=== 委托系统 ===");
         sender.sendMessage("§6/quest create [-t] <标题> <物品:数量,...> <报酬> [押金] §7- 创建委托(-t=城邦委托)");
@@ -230,7 +303,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
-        if (args.length == 1) return List.of("create", "list", "accept", "warehouse").stream()
+        if (args.length == 1) return List.of("create", "list", "accept", "warehouse", "board").stream()
                 .filter(s -> s.startsWith(args[0].toLowerCase())).collect(Collectors.toList());
         return Collections.emptyList();
     }

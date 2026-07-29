@@ -10,6 +10,7 @@ public class QuestPlugin extends JavaPlugin {
     private WarehouseManager warehouseManager;
     private ViolationManager violationManager;
     private QuestGuiManager guiManager;
+    private BoardManager boardManager;
 
     @Override
     public void onEnable() {
@@ -17,6 +18,7 @@ public class QuestPlugin extends JavaPlugin {
         dataManager = new QuestDataManager(new File(getDataFolder(), "quests.yml"), getLogger());
         warehouseManager = new WarehouseManager(getDataFolder(), getLogger());
         violationManager = new ViolationManager(getDataFolder(), getLogger());
+        boardManager = new BoardManager(getDataFolder(), getLogger());
 
         QuestCommand cmd = new QuestCommand(this);
         getCommand("quest").setExecutor(cmd);
@@ -24,6 +26,7 @@ public class QuestPlugin extends JavaPlugin {
 
         guiManager = new QuestGuiManager(this);
         getServer().getPluginManager().registerEvents(guiManager, this);
+        getServer().getPluginManager().registerEvents(new BoardListener(boardManager), this);
 
         new QuestScheduler(this).start();
 
@@ -39,4 +42,5 @@ public class QuestPlugin extends JavaPlugin {
     public WarehouseManager getWarehouseManager() { return warehouseManager; }
     public QuestGuiManager getGuiManager() { return guiManager; }
     public ViolationManager getViolationManager() { return violationManager; }
+    public BoardManager getBoardManager() { return boardManager; }
 }
