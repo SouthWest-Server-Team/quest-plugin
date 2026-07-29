@@ -31,6 +31,23 @@ public class BoardListener implements Listener {
         }
     }
 
+    /** Restore center board signs on startup. */
+    public void restoreCenterBoards() {
+        for (var board : boardManager.getCenterBoards()) {
+            var world = Bukkit.getWorld(board.world());
+            if (world == null) continue;
+            Block block = world.getBlockAt(board.x(), board.y(), board.z());
+            if (block.getState() instanceof Sign sign) {
+                sign.setGlowingText(true);
+                sign.setLine(0, "§8[委托栏]");
+                sign.setLine(1, "§6中央告示牌");
+                sign.setLine(2, "§7右键发布/管理");
+                sign.setLine(3, "");
+                sign.update();
+            }
+        }
+    }
+
     /** Place a wall sign on the block the player is looking at, facing the player. */
     public static Location placeWallSign(Location lookAt, BlockFace facing, String type) {
         Block block = lookAt.getBlock();

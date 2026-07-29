@@ -29,7 +29,9 @@ public class QuestPlugin extends JavaPlugin {
 
         guiManager = new QuestGuiManager(this);
         getServer().getPluginManager().registerEvents(guiManager, this);
-        getServer().getPluginManager().registerEvents(new BoardListener(boardManager), this);
+        var boardListener = new BoardListener(boardManager);
+        getServer().getPluginManager().registerEvents(boardListener, this);
+        boardListener.restoreCenterBoards();
 
         boardDisplayManager = new BoardDisplayManager(this, boardManager, dataManager);
         boardDisplayManager.start();

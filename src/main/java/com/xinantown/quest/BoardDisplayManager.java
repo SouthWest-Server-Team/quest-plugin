@@ -47,6 +47,7 @@ public class BoardDisplayManager {
     }
 
     public void start() {
+        restoreAllSigns();
         displayTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             var quests = dataManager.loadAll().stream()
                     .filter(q -> q.status() == com.xinantown.quest.model.QuestStatus.OPEN)
@@ -56,6 +57,23 @@ public class BoardDisplayManager {
     }
 
     public void stop() { if (displayTask != null) displayTask.cancel(); }
+
+    /** Restore sign text + glow for all boards on startup. */
+    public void restoreAllSigns() {
+        for (Board board : boardManager.getDisplayBoards()) {
+            var world = Bukkit.getWorld(board.world());
+            if (world == null) continue;
+            Block block = world.getBlockAt(board.x(), board.y(), board.z());
+            if (block.getState() instanceof Sign sign) {
+                sign.setGlowingText(true);
+                sign.setLine(0, "§8[委托栏]");
+                sign.setLine(1, "§7暂无委托");
+                sign.setLine(2, "");
+                sign.setLine(3, "");
+                sign.update();
+            }
+        }
+    }
 
     /**
      * 立即刷新：重算分组、重建队列、重绘告示牌。
