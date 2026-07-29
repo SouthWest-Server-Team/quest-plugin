@@ -1,10 +1,12 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Board;
+import com.xinantown.quest.model.Quest;
 import com.xinantown.quest.model.QuestStatus;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
@@ -70,7 +72,23 @@ public class BoardAcceptHandler implements Listener {
     }
 
     private void handleDisplayClick(Player player, Board board) {
-        var quest = displayManager.getQuestForBoard(board.id());
+        // 需求1: 优先从告示牌方块PDC读取quest_id，fallback到内存Map
+        Block block = null;
+        var world = Bukkit.getWorld(board.world());
+        if (world != null) {
+            block = world.getBlockAt(board.x(), board.y(), board.z());
+        }
+        Quest quest = null;
+        if (block != null) {
+            UUID signQuestId = displayManager.readQuestIdFromBlock(block);
+            if (signQuestId != null) {
+                quest = dataManager.loadAll().stream()
+                        .filter(q -> q.id().equals(signQuestId)).findFirst().orElse(null);
+            }
+        }
+        if (quest == null) {
+            quest = displayManager.getQuestForBoard(board.id());
+        }
         if (quest == null) {
             player.sendMessage("§7此告示牌当前没有轮播到委托，请稍后再试。");
             return;

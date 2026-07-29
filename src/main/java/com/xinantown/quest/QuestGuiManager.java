@@ -15,6 +15,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import java.util.*;
 import org.bukkit.plugin.RegisteredServiceProvider;
+import org.bukkit.event.player.PlayerJoinEvent;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -67,6 +68,28 @@ public class QuestGuiManager implements Listener {
 
         openGuis.put(player.getUniqueId(), quest);
         player.openInventory(inv);
+    }
+
+    /**
+     * 玩家加入时清理已完成的委托卷（处理离线时未销毁的情况）。
+     */
+    public void cleanupScrollsOnJoin(Player player) {
+        var all = dataManager.loadAll();
+        for (Quest q : all) {
+            if (q.status() == QuestStatus.COMPLETED || q.status() == QuestStatus.CANCELLED) {
+                if (q.acceptorId() != null && q.acceptorId().equals(player.getUniqueId())) {
+                    QuestScroll.removeFromInventory(player, q.id(), plugin);
+                }
+                if (q.publisherId().equals(player.getUniqueId())) {
+                    QuestScroll.removeFromInventory(player, q.id(), plugin);
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        cleanupScrollsOnJoin(event.getPlayer());
     }
 
     @EventHandler
@@ -161,6 +184,12 @@ public class QuestGuiManager implements Listener {
     }
 
     private void handleApprove(Player player, Quest quest) {
+        // 需求3: 先移除接收方的委托卷
+        Player acceptor = quest.acceptorId() != null ? Bukkit.getPlayer(quest.acceptorId()) : null;
+        if (acceptor != null && acceptor.isOnline()) {
+            QuestScroll.removeFromInventory(acceptor, quest.id(), plugin);
+        }
+
         // Transfer warehouse items to publisher
         Map<Integer, ItemStack> items = plugin.getWarehouseManager().load(quest.id());
         if (!items.isEmpty() && player.isOnline()) {
@@ -178,11 +207,13 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward());
         }
         updateQuest(player, quest.complete());
+        // 移除发布方的委托卷
         QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
         player.sendMessage("§a委托已完成！物品已发放到你的背包。");
-        Player acc = Bukkit.getPlayer(quest.acceptorId());
-        if (acc != null) acc.sendMessage("§a[委托] §6" + quest.title() + " §a已完成！报酬+押金已到账。");
+        if (acceptor != null) acceptor.sendMessage("§a[委托] §6" + quest.title() + " §a已完成！报酬+押金已到账。");
+        // 触发告示牌刷新：空位自动置换到尾部
+        plugin.getBoardDisplayManager().refreshNow();
     }
 
     private void handleReject(Player player, Quest quest) {
@@ -227,9 +258,15 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit());
         }
         updateQuest(player, quest.cancel());
+        // 移除双方委托卷
+        Player acceptor = quest.acceptorId() != null ? Bukkit.getPlayer(quest.acceptorId()) : null;
+        if (acceptor != null && acceptor.isOnline()) {
+            QuestScroll.removeFromInventory(acceptor, quest.id(), plugin);
+        }
         QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
         player.sendMessage("§c委托已终止，双方押金已退还。");
+        plugin.getBoardDisplayManager().refreshNow();
     }
 
     private void handleCancel(Player player, Quest quest) {
@@ -265,8 +302,14 @@ public class QuestGuiManager implements Listener {
             }
         }
         updateQuest(player, quest.cancel());
+        // 移除双方委托卷
+        Player acceptor = quest.acceptorId() != null ? Bukkit.getPlayer(quest.acceptorId()) : null;
+        if (acceptor != null && acceptor.isOnline()) {
+            QuestScroll.removeFromInventory(acceptor, quest.id(), plugin);
+        }
         QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
+        plugin.getBoardDisplayManager().refreshNow();
     }
 
     private void updateQuest(Player player, Quest updated) {
