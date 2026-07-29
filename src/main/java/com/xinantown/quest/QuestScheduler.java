@@ -9,6 +9,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class QuestScheduler implements Runnable {
 
@@ -72,6 +73,23 @@ public class QuestScheduler implements Runnable {
         }
 
         if (changed) dataManager.saveAll(all);
+
+        // Update scroll lore for online players
+        updateScrollLore(all);
+    }
+
+    private void updateScrollLore(List<Quest> all) {
+        QuestScroll scroll = new QuestScroll(plugin);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            for (int i = 0; i < player.getInventory().getSize(); i++) {
+                var item = player.getInventory().getItem(i);
+                if (!scroll.isScroll(item)) continue;
+                UUID qid = scroll.getQuestId(item);
+                if (qid == null) continue;
+                all.stream().filter(q -> q.id().equals(qid)).findFirst()
+                        .ifPresent(q -> scroll.updateLore(item, q));
+            }
+        }
     }
 
     private void notify(java.util.UUID uuid, String msg) {

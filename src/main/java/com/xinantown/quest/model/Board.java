@@ -18,7 +18,8 @@ public record Board(
         String world,
         int x, int y, int z,
         String type,
-        int groupId) {
+        int groupId,
+        String questFilter) {  // null=all, "personal", "town"
 
     public boolean isCenter() { return "center".equals(type); }
     public boolean isDisplay() { return "display".equals(type); }

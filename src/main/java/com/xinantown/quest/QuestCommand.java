@@ -183,17 +183,25 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
     }
 
     private boolean handleBoardCreate(Player player, String[] args) {
-        if (args.length < 3) { player.sendMessage("§c用法: /quest board create <center|display>"); return true; }
+        if (args.length < 3) { player.sendMessage("§c用法: /quest board create <center|display> [personal|town]"); return true; }
         String type = args[2].toLowerCase();
         if (!type.equals("center") && !type.equals("display")) { player.sendMessage("§c类型必须是 center 或 display。"); return true; }
+
+        String questFilter = null;
+        if (args.length >= 4) {
+            String f = args[3].toLowerCase();
+            if (f.equals("personal") || f.equals("town")) questFilter = f;
+            else { player.sendMessage("§c过滤器只能是 personal 或 town。"); return true; }
+        }
 
         org.bukkit.block.Block target = player.getTargetBlockExact(5);
         if (target == null || target.getType().isAir()) { player.sendMessage("§c请对准一个方块！"); return true; }
 
         org.bukkit.block.BlockFace facing = player.getFacing().getOppositeFace();
         org.bukkit.Location signLoc = BoardListener.placeWallSign(target.getLocation(), facing, type);
-        Board board = boardManager.createBoard(signLoc, type);
-        player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！ID: " + board.id());
+        Board board = boardManager.createBoard(signLoc, type, questFilter);
+        String label = questFilter != null ? "(" + questFilter + ")" : "";
+        player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！" + label + " ID: " + board.id());
         return true;
     }
 

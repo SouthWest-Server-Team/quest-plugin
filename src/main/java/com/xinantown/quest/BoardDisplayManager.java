@@ -30,7 +30,6 @@ public class BoardDisplayManager {
     /** 每组独立的委托队列：groupId → List<Quest> */
     private final Map<Integer, List<com.xinantown.quest.model.Quest>> groupQuestQueue = new HashMap<>();
     private int rotationSeconds;
-    private int tickCounter = 0;
     private BukkitTask displayTask;
 
     public BoardDisplayManager(QuestPlugin plugin, BoardManager boardManager, QuestDataManager dataManager) {
@@ -46,12 +45,6 @@ public class BoardDisplayManager {
             var quests = dataManager.loadAll().stream()
                     .filter(q -> q.status() == com.xinantown.quest.model.QuestStatus.OPEN)
                     .toList();
-            // 每 rotationSeconds 重算分组 + 重建队列（基于tick计数，与系统时钟解耦）
-            tickCounter++;
-            if (rotationSeconds >= 2 && tickCounter % (rotationSeconds / 2) == 0) {
-                boardManager.recalculateGroups();
-                rebuildGroupQueues(quests);
-            }
             rotateDisplays(quests);
         }, 40L, 40L);
     }
@@ -96,8 +89,29 @@ public class BoardDisplayManager {
         var groups = boardManager.getDisplayBoards().stream()
                 .collect(Collectors.groupingBy(Board::groupId));
         for (int groupId : groups.keySet()) {
-            groupQuestQueue.put(groupId, new ArrayList<>(openQuests));
+            // Filter quests by each board's filter within the group
+            var boards = groups.get(groupId);
+            var filter = boards.stream().map(Board::questFilter).filter(Objects::nonNull).findFirst().orElse(null);
+            var filtered = openQuests.stream()
+                    .filter(q -> filter == null
+                            || filter.equals(q.isTownQuest() ? "town" : "personal"))
+                    .toList();
+            // Weighted replication: near-expiry quests appear more frequently
+            var weighted = replicateWeighted(filtered);
+            groupQuestQueue.put(groupId, new ArrayList<>(weighted));
         }
+    }
+
+    private java.util.List<com.xinantown.quest.model.Quest> replicateWeighted(
+            java.util.List<com.xinantown.quest.model.Quest> quests) {
+        java.util.List<com.xinantown.quest.model.Quest> result = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        for (var q : quests) {
+            long remaining = q.acceptDeadline() - now;
+            int copies = remaining < 3600000 ? 3 : remaining < 86400000 ? 2 : 1;
+            for (int i = 0; i < copies; i++) result.add(q);
+        }
+        return result;
     }
 
     /**
@@ -131,34 +145,33 @@ public class BoardDisplayManager {
         var groups = boardManager.getDisplayBoards().stream()
                 .collect(Collectors.groupingBy(Board::groupId));
 
+        // Global dedup: same quest only on one board
+        Set<UUID> usedQuestIds = new HashSet<>();
+
         for (var entry : groups.entrySet()) {
             int groupId = entry.getKey();
             var groupBoards = entry.getValue();
             if (groupBoards.isEmpty()) continue;
 
-            // 按2D网格排序
             var sorted = sortByGrid(groupBoards);
-
-            // 获取或初始化该组的委托队列
             var queue = groupQuestQueue.get(groupId);
-            if (queue == null) {
-                queue = new ArrayList<>(quests);
-                groupQuestQueue.put(groupId, queue);
-            }
+            if (queue == null) { queue = new ArrayList<>(quests); groupQuestQueue.put(groupId, queue); }
 
-            // 每 rotationSeconds 旋转一次队列
             if (shouldRotate && queue.size() > 1) {
                 var first = queue.remove(0);
                 queue.add(first);
             }
 
-            // 按2D网格位置分配委托
             for (int i = 0; i < sorted.size(); i++) {
                 Board board = sorted.get(i);
-                if (i < queue.size()) {
-                    var q = queue.get(i);
-                    boardQuestMap.put(board.id(), q);
-                    updateSign(board, q);
+                // Find first unused quest in this board's filtered queue
+                var available = queue.stream()
+                        .filter(q -> !usedQuestIds.contains(q.id()))
+                        .skip(i).findFirst().orElse(null);
+                if (available != null) {
+                    usedQuestIds.add(available.id());
+                    boardQuestMap.put(board.id(), available);
+                    updateSign(board, available);
                 } else {
                     boardQuestMap.remove(board.id());
                     clearSign(board);

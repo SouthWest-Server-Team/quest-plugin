@@ -1,5 +1,7 @@
 package com.xinantown.quest;
 
+import com.xinantown.quest.model.Quest;
+import com.xinantown.quest.model.QuestStatus;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -72,5 +74,35 @@ public final class QuestScroll {
                 }
             }
         }
+    }
+
+    /** Update lore with real-time quest status and remaining time. */
+    public void updateLore(ItemStack item, Quest quest) {
+        if (!isScroll(item)) return;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+
+        long remainingMs = quest.completeDeadline() - System.currentTimeMillis();
+        long days = Math.max(0, remainingMs / 86400000);
+        long hours = Math.max(0, (remainingMs % 86400000) / 3600000);
+
+        String statusStr = switch (quest.status()) {
+            case ACCEPTED -> "§e进行中";
+            case SUBMITTED -> "§b待确认";
+            case COMPLETED -> "§a已完成";
+            default -> "§7未知";
+        };
+
+        List<String> lore = new ArrayList<>();
+        lore.add("§7委托: §e" + quest.title());
+        lore.add("§7" + quest.description());
+        lore.add("§7状态: " + statusStr);
+        if (days > 0) lore.add("§7剩余: §e" + days + "天" + hours + "小时");
+        else if (hours > 0) lore.add("§7剩余: §e" + hours + "小时");
+        else lore.add("§7剩余: §c即将到期");
+        lore.add("");
+        lore.add("§7右键打开委托仓库");
+        meta.setLore(lore);
+        item.setItemMeta(meta);
     }
 }
