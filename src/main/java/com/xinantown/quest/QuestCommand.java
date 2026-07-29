@@ -42,6 +42,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
             case "accept" -> handleAccept(sender, args);
             case "warehouse" -> handleWarehouse(sender, args);
             case "board" -> handleBoard(sender, args);
+            case "my" -> handleMy(sender);
             default -> { sendHelp(sender); yield true; }
         };
     }
@@ -290,6 +291,36 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
         target.setType(org.bukkit.Material.AIR);
         player.sendMessage("§e委托栏已移除。");
+        return true;
+    }
+
+    // ==================== my ====================
+
+    private boolean handleMy(CommandSender sender) {
+        if (!(sender instanceof org.bukkit.entity.Player player)) {
+            sender.sendMessage("§c玩家专用命令。"); return true;
+        }
+        java.util.List<Quest> all = dataManager.loadAll();
+        java.util.List<Quest> mine = all.stream()
+                .filter(q -> q.publisherId().equals(player.getUniqueId()))
+                .toList();
+
+        if (mine.isEmpty()) {
+            player.sendMessage("§7你还没有发布过委托。");
+            return true;
+        }
+
+        player.sendMessage("§6=== 我的委托 (" + mine.size() + ") ===");
+        for (Quest q : mine) {
+            String status = switch (q.status()) {
+                case OPEN -> "§a可接取";
+                case ACCEPTED -> "§e进行中";
+                case SUBMITTED -> "§b待确认";
+                case COMPLETED -> "§7已完成";
+                case CANCELLED -> "§c已取消";
+            };
+            player.sendMessage("§6" + q.title() + " §7- " + status + " §8[" + q.id().toString().substring(0, 8) + "]");
+        }
         return true;
     }
 

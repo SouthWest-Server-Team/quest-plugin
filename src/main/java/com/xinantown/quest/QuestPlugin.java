@@ -27,6 +27,7 @@ public class QuestPlugin extends JavaPlugin {
         guiManager = new QuestGuiManager(this);
         getServer().getPluginManager().registerEvents(guiManager, this);
         getServer().getPluginManager().registerEvents(new BoardListener(boardManager), this);
+        getServer().getPluginManager().registerEvents(new BoardClickListener(boardManager, dataManager), this);
 
         new QuestScheduler(this).start();
 
