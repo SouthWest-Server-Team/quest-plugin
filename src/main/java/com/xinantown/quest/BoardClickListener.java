@@ -39,6 +39,8 @@ public class BoardClickListener implements Listener {
     private final Map<UUID, PendingAccept> pendingAccepts = new HashMap<>();
     // Display rotation
     private final Map<Integer, Integer> rotationIndex = new HashMap<>();
+    // Store currently displayed quest per board: boardId → quest
+    private final Map<String, com.xinantown.quest.model.Quest> boardQuestMap = new HashMap<>();
     private int rotationSeconds = 30;
     private BukkitTask displayTask;
     // Chat-guided creation state
@@ -107,6 +109,7 @@ public class BoardClickListener implements Listener {
             int questIndex = (index + position) % quests.size();
             var quest = quests.get(questIndex);
 
+            boardQuestMap.put(board.id(), quest);
             updateSign(board, quest);
 
             if (board.equals(groupBoards.get(0)) && seconds % rotationSeconds == 0) {
@@ -116,6 +119,7 @@ public class BoardClickListener implements Listener {
     }
 
     private void clearSign(Board board) {
+        boardQuestMap.remove(board.id());
         org.bukkit.World world = Bukkit.getWorld(board.world());
         if (world == null) return;
         Block block = world.getBlockAt(board.x(), board.y(), board.z());
@@ -411,30 +415,24 @@ public class BoardClickListener implements Listener {
     // ==================== Display board info + accept ====================
 
     private void showDisplayInfo(Player player, Board board) {
-        var quests = dataManager.loadAll().stream()
-                .filter(q -> q.status() == com.xinantown.quest.model.QuestStatus.OPEN)
-                .toList();
+        // Use in-memory map: which quest is this board currently showing?
+        var quest = boardQuestMap.get(board.id());
 
-        if (quests.isEmpty()) {
-            player.sendMessage("§7当前没有可接取的委托。");
+        if (quest == null) {
+            player.sendMessage("§7此告示牌当前没有轮播到委托，请稍后再试。");
             return;
         }
 
-        // Check if this board has a quest displayed (not cleared)
-        org.bukkit.World world = Bukkit.getWorld(board.world());
-        if (world != null) {
-            Block block = world.getBlockAt(board.x(), board.y(), board.z());
-            if (block.getState() instanceof Sign sign) {
-                String line1 = sign.getLine(1);
-                if (line1.contains("暂无委托") || line1.isEmpty()) {
-                    player.sendMessage("§7此告示牌当前没有轮播到委托，请稍后再试或查看其他告示牌。");
-                    return;
-                }
-            }
+        // Double-check quest is still OPEN
+        final var lookupId = quest.id();
+        var current = dataManager.loadAll().stream()
+                .filter(q -> q.id().equals(lookupId)).findFirst().orElse(null);
+        if (current == null || current.status() != QuestStatus.OPEN) {
+            boardQuestMap.remove(board.id());
+            player.sendMessage("§7此委托已被接取或取消。");
+            return;
         }
-
-        // Show first quest
-        var quest = quests.get(0);
+        quest = current;
 
         // Check for pending confirmation
         UUID playerId = player.getUniqueId();
