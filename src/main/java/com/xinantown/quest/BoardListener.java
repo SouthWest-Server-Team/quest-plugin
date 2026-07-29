@@ -13,7 +13,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 
 /**
  * Protects quest board signs from being broken by players.
- * Handles hologram display via YukiNoaAPI.
+ * Restores sign text and glow on startup.
  */
 public class BoardListener implements Listener {
 
@@ -74,9 +74,6 @@ public class BoardListener implements Listener {
             sign.update();
         }
 
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
-                "hologram create line " + (signBlock.getX() + 0.5) + " " + (signBlock.getY() + 1.3) + " " + (signBlock.getZ() + 0.5)
-                        + " \"§6[委托栏]\"");
         return signBlock.getLocation();
     }
 }
