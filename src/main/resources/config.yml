@@ -10,3 +10,11 @@ accept-deadline-days: 7
 complete-deadline-days: 7
 # 显示告示牌轮换间隔（秒）
 board-rotation-seconds: 30
+# 热卖加权: 剩余小于此小时数的委托获得最大展示次数
+board-urgent-hours: 1
+# 热卖加权: 剩余小于此小时数的委托获得中等展示次数
+board-warn-hours: 24
+# 热卖加权: 紧急委托的队列副本数
+board-urgent-copies: 3
+# 热卖加权: 预警委托的队列副本数
+board-warn-copies: 2

@@ -1,6 +1,7 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Board;
+import com.xinantown.quest.model.QuestFilter;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
@@ -30,6 +31,7 @@ public class BoardDisplayManager {
     /** 每组独立的委托队列：groupId → List<Quest> */
     private final Map<Integer, List<com.xinantown.quest.model.Quest>> groupQuestQueue = new HashMap<>();
     private int rotationSeconds;
+    private int urgentHours, warnHours, urgentCopies, warnCopies;
     private BukkitTask displayTask;
 
     public BoardDisplayManager(QuestPlugin plugin, BoardManager boardManager, QuestDataManager dataManager) {
@@ -37,6 +39,10 @@ public class BoardDisplayManager {
         this.boardManager = boardManager;
         this.dataManager = dataManager;
         this.rotationSeconds = plugin.getConfig().getInt("board-rotation-seconds", 30);
+        this.urgentHours = plugin.getConfig().getInt("board-urgent-hours", 1);
+        this.warnHours = plugin.getConfig().getInt("board-warn-hours", 24);
+        this.urgentCopies = plugin.getConfig().getInt("board-urgent-copies", 3);
+        this.warnCopies = plugin.getConfig().getInt("board-warn-copies", 2);
         this.questIdKey = new NamespacedKey(plugin, "quest_id");
     }
 
@@ -89,16 +95,15 @@ public class BoardDisplayManager {
         var groups = boardManager.getDisplayBoards().stream()
                 .collect(Collectors.groupingBy(Board::groupId));
         for (int groupId : groups.keySet()) {
-            // Filter quests by each board's filter within the group
-            var boards = groups.get(groupId);
-            var filter = boards.stream().map(Board::questFilter).filter(Objects::nonNull).findFirst().orElse(null);
+            var filter = groups.get(groupId).stream()
+                    .map(Board::questFilter).filter(f -> f != QuestFilter.ALL)
+                    .findFirst().orElse(QuestFilter.ALL);
             var filtered = openQuests.stream()
-                    .filter(q -> filter == null
-                            || filter.equals(q.isTownQuest() ? "town" : "personal"))
+                    .filter(q -> filter == QuestFilter.ALL
+                            || (filter == QuestFilter.PERSONAL && !q.isTownQuest())
+                            || (filter == QuestFilter.TOWN && q.isTownQuest()))
                     .toList();
-            // Weighted replication: near-expiry quests appear more frequently
-            var weighted = replicateWeighted(filtered);
-            groupQuestQueue.put(groupId, new ArrayList<>(weighted));
+            groupQuestQueue.put(groupId, new ArrayList<>(replicateWeighted(filtered)));
         }
     }
 
@@ -106,9 +111,12 @@ public class BoardDisplayManager {
             java.util.List<com.xinantown.quest.model.Quest> quests) {
         java.util.List<com.xinantown.quest.model.Quest> result = new ArrayList<>();
         long now = System.currentTimeMillis();
+        long urgentMs = urgentHours * 3600000L;
+        long warnMs = warnHours * 3600000L;
         for (var q : quests) {
             long remaining = q.acceptDeadline() - now;
-            int copies = remaining < 3600000 ? 3 : remaining < 86400000 ? 2 : 1;
+            int copies = remaining < urgentMs ? urgentCopies
+                    : remaining < warnMs ? warnCopies : 1;
             for (int i = 0; i < copies; i++) result.add(q);
         }
         return result;

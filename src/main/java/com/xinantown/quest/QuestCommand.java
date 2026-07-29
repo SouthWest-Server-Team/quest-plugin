@@ -3,6 +3,7 @@ package com.xinantown.quest;
 import com.xinantown.quest.model.Quest;
 import com.xinantown.quest.model.QuestStatus;
 import com.xinantown.quest.model.Board;
+import com.xinantown.quest.model.QuestFilter;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -199,7 +200,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
         org.bukkit.block.BlockFace facing = player.getFacing().getOppositeFace();
         org.bukkit.Location signLoc = BoardListener.placeWallSign(target.getLocation(), facing, type);
-        Board board = boardManager.createBoard(signLoc, type, questFilter);
+        Board board = boardManager.createBoard(signLoc, type, QuestFilter.fromString(questFilter));
         String label = questFilter != null ? "(" + questFilter + ")" : "";
         player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！" + label + " ID: " + board.id());
         return true;

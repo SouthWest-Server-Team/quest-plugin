@@ -1,6 +1,7 @@
 package com.xinantown.quest;
 
 import com.xinantown.quest.model.Board;
+import com.xinantown.quest.model.QuestFilter;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -30,7 +31,7 @@ public class BoardManager {
     // ==================== CRUD ====================
 
     /** Place a new board at the given location. */
-    public Board createBoard(Location loc, String type, String questFilter) {
+    public Board createBoard(Location loc, String type, QuestFilter questFilter) {
         String id = "board_" + (nextId++);
         int groupId = 0;
         if ("display".equals(type)) {
@@ -162,7 +163,7 @@ public class BoardManager {
                     s.getInt("x"), s.getInt("y"), s.getInt("z"),
                     s.getString("type", "display"),
                     s.getInt("group_id", 0),
-                    s.getString("quest_filter", null));
+                    QuestFilter.fromString(s.getString("quest_filter", null)));
             boards.put(id, board);
         }
     }
