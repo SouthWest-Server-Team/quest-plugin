@@ -7,11 +7,13 @@ import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,15 +28,81 @@ public class BoardClickListener implements Listener {
 
     private final BoardManager boardManager;
     private final QuestDataManager dataManager;
+    private final QuestPlugin plugin;
 
-    // Pending accept confirmations: player UUID → {questId, expireTime}
+    // Pending accept confirmations
     private final Map<UUID, PendingAccept> pendingAccepts = new HashMap<>();
+    // Display rotation: groupId → current index
+    private final Map<Integer, Integer> rotationIndex = new HashMap<>();
+    private int rotationSeconds = 30;
+    private BukkitTask displayTask;
 
     private record PendingAccept(UUID questId, long expireTime) {}
 
-    public BoardClickListener(BoardManager boardManager, QuestDataManager dataManager) {
+    public BoardClickListener(QuestPlugin plugin, BoardManager boardManager,
+                               QuestDataManager dataManager) {
+        this.plugin = plugin;
         this.boardManager = boardManager;
         this.dataManager = dataManager;
+        this.rotationSeconds = plugin.getConfig().getInt("board-rotation-seconds", 30);
+    }
+
+    public void start() {
+        displayTask = org.bukkit.Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            var quests = dataManager.loadAll().stream()
+                    .filter(q -> q.status() == com.xinantown.quest.model.QuestStatus.OPEN)
+                    .toList();
+            rotateDisplays(quests);
+        }, 40L, 40L); // every 2s refresh signs
+    }
+
+    public void stop() {
+        if (displayTask != null) displayTask.cancel();
+    }
+
+    // ==================== Display rotation ====================
+
+    private void rotateDisplays(java.util.List<com.xinantown.quest.model.Quest> quests) {
+        if (quests.isEmpty()) return;
+
+        long seconds = System.currentTimeMillis() / 1000;
+
+        for (Board board : boardManager.getDisplayBoards()) {
+            int groupId = board.groupId();
+            java.util.List<Board> groupBoards = boardManager.getGroupBoards(groupId);
+            if (groupBoards.isEmpty()) groupBoards = java.util.List.of(board);
+
+            int index = rotationIndex.getOrDefault(groupId, 0);
+            int questIndex = (index + groupBoards.indexOf(board)) % quests.size();
+            var quest = quests.get(questIndex);
+
+            // Update sign text
+            updateSign(board, quest);
+
+            // Advance rotation index every rotationSeconds
+            if (board.equals(groupBoards.get(0))
+                    && seconds % rotationSeconds == 0) {
+                rotationIndex.put(groupId, (index + 1) % quests.size());
+            }
+        }
+    }
+
+    private void updateSign(Board board, com.xinantown.quest.model.Quest quest) {
+        org.bukkit.World world = org.bukkit.Bukkit.getWorld(board.world());
+        if (world == null) return;
+        Block block = world.getBlockAt(board.x(), board.y(), board.z());
+        if (!(block.getState() instanceof Sign sign)) return;
+
+        String type = quest.isTownQuest() ? "§b[城邦]" : "§a[个人]";
+        sign.setLine(0, type);
+        sign.setLine(1, "§6" + truncateSign(quest.title(), 15));
+        sign.setLine(2, "§7报酬: §e$" + String.format("%.0f", quest.reward()));
+        sign.setLine(3, "§7右键接取");
+        sign.update();
+    }
+
+    private String truncateSign(String s, int max) {
+        return s.length() > max ? s.substring(0, max) : s;
     }
 
     @EventHandler

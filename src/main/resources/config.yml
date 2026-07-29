@@ -8,3 +8,5 @@ cancel-penalty-acceptor: 3.0
 accept-deadline-days: 7
 # 委托完成期限（天）
 complete-deadline-days: 7
+# 显示告示牌轮换间隔（秒）
+board-rotation-seconds: 30

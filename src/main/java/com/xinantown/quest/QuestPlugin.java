@@ -11,6 +11,7 @@ public class QuestPlugin extends JavaPlugin {
     private ViolationManager violationManager;
     private QuestGuiManager guiManager;
     private BoardManager boardManager;
+    private BoardClickListener boardClickListener;
 
     @Override
     public void onEnable() {
@@ -27,7 +28,9 @@ public class QuestPlugin extends JavaPlugin {
         guiManager = new QuestGuiManager(this);
         getServer().getPluginManager().registerEvents(guiManager, this);
         getServer().getPluginManager().registerEvents(new BoardListener(boardManager), this);
-        getServer().getPluginManager().registerEvents(new BoardClickListener(boardManager, dataManager), this);
+        boardClickListener = new BoardClickListener(this, boardManager, dataManager);
+        getServer().getPluginManager().registerEvents(boardClickListener, this);
+        boardClickListener.start();
 
         new QuestScheduler(this).start();
 
