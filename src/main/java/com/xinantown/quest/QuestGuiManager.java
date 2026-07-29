@@ -37,6 +37,11 @@ public class QuestGuiManager implements Listener {
     }
 
     public void openWarehouse(Player player, Quest quest) {
+        // Guard: completed or cancelled quests have no warehouse
+        if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) {
+            player.sendMessage("§7该委托已结束，仓库已关闭。");
+            return;
+        }
         int size = 54;
         Inventory inv = Bukkit.createInventory(null, size, "§8委托仓库 - " + truncate(quest.title(), 20));
 
@@ -97,6 +102,12 @@ public class QuestGuiManager implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Quest quest = openGuis.get(player.getUniqueId());
         if (quest == null) return;
+        // Guard: completed/cancelled quests have no interactive warehouse
+        if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) {
+            openGuis.remove(player.getUniqueId());
+            player.closeInventory();
+            return;
+        }
         if (!event.getView().getTitle().contains("委托仓库")) return;
 
         int slot = event.getSlot();
