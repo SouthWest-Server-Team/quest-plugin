@@ -42,7 +42,7 @@ public class BoardListener implements Listener {
 
         signBlock.setType(Material.OAK_WALL_SIGN);
         if (signBlock.getBlockData() instanceof Directional dir) {
-            dir.setFacing(facing.getOppositeFace());
+            dir.setFacing(facing);
             signBlock.setBlockData(dir);
         }
 

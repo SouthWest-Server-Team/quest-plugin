@@ -269,9 +269,9 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         }
 
         org.bukkit.block.BlockFace facing = player.getFacing().getOppositeFace();
-        BoardListener.placeWallSign(target.getLocation(), player.getFacing().getOppositeFace());
+        org.bukkit.Location signLoc = BoardListener.placeWallSign(target.getLocation(), facing);
 
-        Board board = boardManager.createBoard(target.getLocation(), type);
+        Board board = boardManager.createBoard(signLoc, type);
         player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！ID: " + board.id());
         return true;
     }

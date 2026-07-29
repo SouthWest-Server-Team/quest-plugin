@@ -146,30 +146,36 @@ public class BoardClickListener implements Listener {
 
     private void showCenterMenu(Player player) {
         player.sendMessage("§6======== 委托栏 ========");
+        player.sendMessage("§7欢迎使用委托系统！请点击下方按钮操作：");
+        player.sendMessage(" ");
 
-        TextComponent publishBtn = new TextComponent("§a[发布委托]");
+        TextComponent publishBtn = new TextComponent("§a§l[发布委托]");
         publishBtn.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/quest create "));
         publishBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7点击填充发布命令").create()));
+                new ComponentBuilder("§7点击后输入 §e/quest create §7补全参数\n§7格式: <标题> <物品:数量,...> <报酬> [押金]\n§7示例: /quest create 钻石委托 DIAMOND:64 500").create()));
         player.spigot().sendMessage(publishBtn);
+        player.sendMessage("  §7→ 创建新的委托（个人/城邦）。点击后补全参数即可。");
 
         player.spigot().sendMessage(new TextComponent(" "));
 
-        TextComponent myBtn = new TextComponent("§e[我的委托]");
+        TextComponent myBtn = new TextComponent("§e§l[我的委托]");
         myBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest my"));
         myBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7查看自己发布的委托").create()));
+                new ComponentBuilder("§7查看自己发布的所有委托及状态").create()));
         player.spigot().sendMessage(myBtn);
+        player.sendMessage("  §7→ 查看自己发布的委托（含进行中、已完成等状态）。");
 
         player.spigot().sendMessage(new TextComponent(" "));
 
-        TextComponent cancelBtn = new TextComponent("§c[撤回委托]");
+        TextComponent cancelBtn = new TextComponent("§c§l[撤回委托]");
         cancelBtn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest my"));
         cancelBtn.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new ComponentBuilder("§7查看并撤回自己的委托").create()));
+                new ComponentBuilder("§7查看我的委托后，在仓库GUI中取消").create()));
         player.spigot().sendMessage(cancelBtn);
+        player.sendMessage("  §7→ 在\"我的委托\"中打开仓库，点击\"取消委托\"按钮撤回。");
 
-        player.sendMessage("§8提示：点击上方按钮操作");
+        player.sendMessage(" ");
+        player.sendMessage("§8提示：点击上方§a§l绿色§8或§e§l黄色§8文字按钮操作，§7灰色为说明文字。");
     }
 
     // ==================== Display board info + accept ====================
