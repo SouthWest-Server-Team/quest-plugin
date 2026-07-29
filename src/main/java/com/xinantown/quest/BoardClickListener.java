@@ -73,8 +73,12 @@ public class BoardClickListener implements Listener {
             var quests = dataManager.loadAll().stream()
                     .filter(q -> q.status() == com.xinantown.quest.model.QuestStatus.OPEN)
                     .toList();
+            // Recalculate groups every 30s
+            if (System.currentTimeMillis() / 1000 % 30 == 0) {
+                boardManager.recalculateGroups();
+            }
             rotateDisplays(quests);
-        }, 40L, 40L); // every 2s refresh signs
+        }, 40L, 40L);
     }
 
     public void stop() {
@@ -407,7 +411,6 @@ public class BoardClickListener implements Listener {
     // ==================== Display board info + accept ====================
 
     private void showDisplayInfo(Player player, Board board) {
-        // Find OPEN quests and show the first one (or rotating)
         var quests = dataManager.loadAll().stream()
                 .filter(q -> q.status() == com.xinantown.quest.model.QuestStatus.OPEN)
                 .toList();
@@ -417,7 +420,20 @@ public class BoardClickListener implements Listener {
             return;
         }
 
-        // Simple: show first quest. Rotation handled by display ticker.
+        // Check if this board has a quest displayed (not cleared)
+        org.bukkit.World world = Bukkit.getWorld(board.world());
+        if (world != null) {
+            Block block = world.getBlockAt(board.x(), board.y(), board.z());
+            if (block.getState() instanceof Sign sign) {
+                String line1 = sign.getLine(1);
+                if (line1.contains("暂无委托") || line1.isEmpty()) {
+                    player.sendMessage("§7此告示牌当前没有轮播到委托，请稍后再试或查看其他告示牌。");
+                    return;
+                }
+            }
+        }
+
+        // Show first quest
         var quest = quests.get(0);
 
         // Check for pending confirmation

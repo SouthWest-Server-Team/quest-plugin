@@ -34,7 +34,7 @@ public class BoardManager {
         String id = "board_" + (nextId++);
         int groupId = 0;
         if ("display".equals(type)) {
-            groupId = findOrCreateGroup(loc);
+            groupId = nextGroupId++; // temporary, will be recalculated
         }
         Board board = new Board(id, loc.getWorld().getName(),
                 loc.getBlockX(), loc.getBlockY(), loc.getBlockZ(), type, groupId);
@@ -93,25 +93,52 @@ public class BoardManager {
     // ==================== Group detection ====================
 
     /**
-     * BFS: find existing display boards adjacent (4-direction) to the given location.
-     * Assign to an existing group, or create a new group.
+     * Recalculate all display board groups using BFS ripple.
+     * Starting from each unvisited display board, flood 4-directionally
+     * to find all connected display boards. Each connected component gets a unique groupId.
      */
-    private int findOrCreateGroup(Location loc) {
+    public void recalculateGroups() {
+        var displayBoards = getDisplayBoards();
         Set<String> visited = new HashSet<>();
-        for (Board existing : boards.values()) {
-            if (!existing.isDisplay()) continue;
-            if (isAdjacent(loc, existing)) {
-                return existing.groupId();
+        int groupId = 1;
+
+        for (Board start : displayBoards) {
+            String key = start.world() + ":" + start.x() + ":" + start.y() + ":" + start.z();
+            if (visited.contains(key)) continue;
+
+            // BFS from this start board
+            Queue<Board> queue = new java.util.LinkedList<>();
+            queue.add(start);
+            visited.add(key);
+
+            while (!queue.isEmpty()) {
+                Board current = queue.poll();
+                // Update group
+                Board updated = new Board(current.id(), current.world(),
+                        current.x(), current.y(), current.z(), current.type(), groupId);
+                boards.put(current.id(), updated);
+
+                // Check 4 neighbors
+                for (Board neighbor : displayBoards) {
+                    String nKey = neighbor.world() + ":" + neighbor.x() + ":" + neighbor.y() + ":" + neighbor.z();
+                    if (visited.contains(nKey)) continue;
+                    if (isAdjacentBoard(current, neighbor)) {
+                        visited.add(nKey);
+                        queue.add(neighbor);
+                    }
+                }
             }
+            groupId++;
         }
-        return nextGroupId++;
+        nextGroupId = groupId;
+        save();
     }
 
-    private boolean isAdjacent(Location loc, Board board) {
-        if (!loc.getWorld().getName().equals(board.world())) return false;
-        int dx = Math.abs(loc.getBlockX() - board.x());
-        int dz = Math.abs(loc.getBlockZ() - board.z());
-        return loc.getBlockY() == board.y() && dx + dz == 1;
+    private boolean isAdjacentBoard(Board a, Board b) {
+        if (!a.world().equals(b.world())) return false;
+        int dx = Math.abs(a.x() - b.x());
+        int dz = Math.abs(a.z() - b.z());
+        return a.y() == b.y() && dx + dz == 1;
     }
 
     // ==================== Persistence ====================
