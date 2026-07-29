@@ -181,7 +181,7 @@ public class BoardManager {
             s.set("x", b.x()); s.set("y", b.y()); s.set("z", b.z());
             s.set("type", b.type());
             s.set("group_id", b.groupId());
-            s.set("quest_filter", b.questFilter());
+            s.set("quest_filter", b.questFilter().name());
         }
 
         try { cfg.save(file); } catch (IOException ex) {
