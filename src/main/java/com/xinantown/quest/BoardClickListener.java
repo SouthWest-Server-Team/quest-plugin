@@ -107,6 +107,24 @@ public class BoardClickListener implements Listener {
 
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
+        // Scroll right-click → open warehouse
+        QuestScroll scroll = new QuestScroll(plugin);
+        if (event.getItem() != null && scroll.isScroll(event.getItem())
+                && (event.getAction() == Action.RIGHT_CLICK_AIR
+                    || event.getAction() == Action.RIGHT_CLICK_BLOCK)) {
+            UUID questId = scroll.getQuestId(event.getItem());
+            if (questId != null) {
+                var quest = dataManager.loadAll().stream()
+                        .filter(q -> q.id().equals(questId)).findFirst().orElse(null);
+                if (quest != null) {
+                    event.setCancelled(true);
+                    plugin.getGuiManager().openWarehouse(event.getPlayer(), quest);
+                    return;
+                }
+            }
+        }
+
+        // Board right-click
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         Block block = event.getClickedBlock();
         if (block == null) return;
@@ -203,8 +221,53 @@ public class BoardClickListener implements Listener {
             return;
         }
 
-        // TODO: full accept logic (T05)
-        player.sendMessage("§a已确认接取委托 §6" + quest.title() + "§a！");
+        // Check not own quest
+        if (quest.publisherId().equals(player.getUniqueId())) {
+            player.sendMessage("§c不能接取自己的委托。");
+            return;
+        }
+
+        // Town quest: only mayor
+        if (quest.isTownQuest()) {
+            var town = com.palmergames.bukkit.towny.TownyAPI.getInstance().getTown(player);
+            if (town == null) { player.sendMessage("§c城邦委托只能由城邦接取！"); return; }
+            if (plugin.getViolationManager().isBanned(town.getName())) {
+                long hours = (plugin.getViolationManager().getBanEnd(town.getName()) - System.currentTimeMillis()) / 3600000;
+                player.sendMessage("§c城邦处于违约状态，剩余 " + hours + " 小时。");
+                return;
+            }
+            if (!town.hasMayor() || !town.getMayor().getUUID().equals(player.getUniqueId())) {
+                player.sendMessage("§c只有市长才能代表城邦接取委托！"); return;
+            }
+        }
+
+        // Economy
+        var econ = org.bukkit.Bukkit.getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
+        if (econ == null) { player.sendMessage("§c经济系统未就绪。"); return; }
+        double deposit = quest.deposit();
+        if (!econ.getProvider().has(player, deposit)) {
+            player.sendMessage("§c余额不足！需要支付押金 $" + String.format("%.0f", deposit)); return;
+        }
+        econ.getProvider().withdrawPlayer(player, deposit);
+
+        // Accept
+        long newDeadline = System.currentTimeMillis() + 86400000L * plugin.getConfig().getInt("complete-deadline-days", 7);
+        var accepted = quest.accept(player.getUniqueId(), player.getName(),
+                quest.isTownQuest(), newDeadline);
+
+        // Save
+        java.util.List<com.xinantown.quest.model.Quest> all = new java.util.ArrayList<>(dataManager.loadAll());
+        for (int i = 0; i < all.size(); i++) {
+            if (all.get(i).id().equals(quest.id())) { all.set(i, accepted); break; }
+        }
+        dataManager.saveAll(all);
+
+        // Give scroll
+        QuestScroll scroll = new QuestScroll(plugin);
+        player.getInventory().setItemInMainHand(scroll.createScroll(quest.id(), quest.title()));
+
+        player.sendMessage("§a已接取委托 §6" + quest.title() + "§a！押金: $" + String.format("%.0f", deposit));
+        player.sendMessage("§e手持委托卷右键打开仓库。");
     }
 
     private String formatItems(java.util.List<com.xinantown.quest.model.QuestItem> items) {
