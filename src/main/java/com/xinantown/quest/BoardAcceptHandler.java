@@ -147,12 +147,12 @@ public class BoardAcceptHandler implements Listener {
             if (all.get(i).id().equals(quest.id())) { all.set(i, accepted); break; }
         }
         dataManager.saveAll(all);
+        Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestAcceptedEvent(accepted));
 
         QuestScroll scroll = new QuestScroll(plugin);
         player.getInventory().setItemInMainHand(scroll.createScroll(quest.id(), quest.title(), quest.description()));
 
         player.sendMessage("§a已接取委托 §6" + quest.title() + "§a！");
         player.sendMessage("§e手持委托卷右键打开仓库。");
-        displayManager.refreshNow();
     }
 }

@@ -40,6 +40,9 @@ public class QuestPlugin extends JavaPlugin {
         boardMenuHandler = new BoardMenuHandler(this, boardManager, dataManager);
         getServer().getPluginManager().registerEvents(boardMenuHandler, this);
 
+        getServer().getPluginManager().registerEvents(
+                new DisplayUpdateListener(boardDisplayManager), this);
+
         new QuestScheduler(this).start();
         new CasusBelliListener(this).register();
 

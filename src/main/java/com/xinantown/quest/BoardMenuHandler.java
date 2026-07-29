@@ -192,6 +192,7 @@ public class BoardMenuHandler implements Listener {
         all.add(quest);
         dataManager.saveAll(all);
         creationStates.remove(player.getUniqueId());
+        Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestCreatedEvent(quest));
         player.sendMessage("§a委托 §6" + s.title + " §a已创建！");
     }
 

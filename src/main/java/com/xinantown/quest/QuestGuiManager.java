@@ -207,13 +207,11 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward());
         }
         updateQuest(player, quest.complete());
-        // 移除发布方的委托卷
+        Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestCompletedEvent(quest));
         QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
         player.sendMessage("§a委托已完成！物品已发放到你的背包。");
         if (acceptor != null) acceptor.sendMessage("§a[委托] §6" + quest.title() + " §a已完成！报酬+押金已到账。");
-        // 触发告示牌刷新：空位自动置换到尾部
-        plugin.getBoardDisplayManager().refreshNow();
     }
 
     private void handleReject(Player player, Quest quest) {
@@ -258,6 +256,7 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit());
         }
         updateQuest(player, quest.cancel());
+        Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestCompletedEvent(quest));
         // 移除双方委托卷
         Player acceptor = quest.acceptorId() != null ? Bukkit.getPlayer(quest.acceptorId()) : null;
         if (acceptor != null && acceptor.isOnline()) {
@@ -266,7 +265,6 @@ public class QuestGuiManager implements Listener {
         QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
         player.sendMessage("§c委托已终止，双方押金已退还。");
-        plugin.getBoardDisplayManager().refreshNow();
     }
 
     private void handleCancel(Player player, Quest quest) {
@@ -302,6 +300,7 @@ public class QuestGuiManager implements Listener {
             }
         }
         updateQuest(player, quest.cancel());
+        Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestCompletedEvent(quest));
         // 移除双方委托卷
         Player acceptor = quest.acceptorId() != null ? Bukkit.getPlayer(quest.acceptorId()) : null;
         if (acceptor != null && acceptor.isOnline()) {
@@ -309,7 +308,6 @@ public class QuestGuiManager implements Listener {
         }
         QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
-        plugin.getBoardDisplayManager().refreshNow();
     }
 
     private void updateQuest(Player player, Quest updated) {
