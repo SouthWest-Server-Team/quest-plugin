@@ -33,6 +33,7 @@ public class QuestPlugin extends JavaPlugin {
         boardClickListener.start();
 
         new QuestScheduler(this).start();
+        new CasusBelliListener(this).register();
 
         getLogger().info("QuestPlugin enabled.");
     }

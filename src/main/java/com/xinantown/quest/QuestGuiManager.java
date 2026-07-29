@@ -23,7 +23,9 @@ public class QuestGuiManager implements Listener {
 
     private final QuestPlugin plugin;
     private final QuestDataManager dataManager;
-    private final Map<UUID, Quest> openGuis = new HashMap<>(); // player UUID → quest
+    private final Map<UUID, Quest> openGuis = new HashMap<>();
+    private final Map<UUID, Boolean> approveConfirm = new HashMap<>(); // confirm state
+    private final Map<UUID, Quest> pendingReject = new HashMap<>(); // awaiting reason
     private Economy econ;
 
     public QuestGuiManager(QuestPlugin plugin) {
@@ -87,7 +89,27 @@ public class QuestGuiManager implements Listener {
             event.setCancelled(true);
             if (btn.equals("§a提交委托") && isAcceptor) handleSubmit(player, quest, event.getInventory(), size);
             else if (btn.equals("§e暂存") && isAcceptor) handleSave(player, quest, event.getInventory(), size);
-            else if (btn.equals("§a同意") && isPublisher) handleApprove(player, quest);
+            else if (btn.equals("§a同意") && isPublisher) {
+                if (approveConfirm.getOrDefault(player.getUniqueId(), false)) {
+                    approveConfirm.remove(player.getUniqueId());
+                    handleApprove(player, quest);
+                } else {
+                    approveConfirm.put(player.getUniqueId(), true);
+                    event.getInventory().setItem(slot, createButton(Material.GREEN_STAINED_GLASS_PANE, "§a确认同意"));
+                    int revertSlot = slot + 1;
+                    if (revertSlot < size) {
+                        event.getInventory().setItem(revertSlot, createButton(Material.GRAY_STAINED_GLASS_PANE, "§7返回"));
+                    }
+                }
+            }
+            else if (btn.equals("§a确认同意") && isPublisher) {
+                approveConfirm.remove(player.getUniqueId());
+                handleApprove(player, quest);
+            }
+            else if (btn.equals("§7返回") && isPublisher) {
+                approveConfirm.remove(player.getUniqueId());
+                player.closeInventory();
+            }
             else if (btn.startsWith("§c驳回") && isPublisher) handleReject(player, quest);
             else if (btn.equals("§4终止委托") && isPublisher) handleTerminate(player, quest);
             else if (btn.equals("§c取消委托") && (isPublisher || isAcceptor)) handleCancel(player, quest);
@@ -153,16 +175,39 @@ public class QuestGuiManager implements Listener {
     }
 
     private void handleReject(Player player, Quest quest) {
+        pendingReject.put(player.getUniqueId(), quest);
+        player.closeInventory();
+        player.sendMessage("§e请在聊天栏输入驳回理由（30秒内有效）：");
+    }
+
+    private void executeReject(Player player, Quest quest, String reason) {
+        pendingReject.remove(player.getUniqueId());
         int max = plugin.getConfig().getInt("max-rejects", 5);
         updateQuest(player, quest.reject(max));
-        player.closeInventory();
+
         if (quest.rejectCount() + 1 >= max) {
             player.sendMessage("§c委托已因多次驳回而终止。");
         } else {
-            player.sendMessage("§e委托已驳回（第 " + (quest.rejectCount() + 1) + " 次），接收方可重新准备。");
+            player.sendMessage("§e委托已驳回（第 " + (quest.rejectCount() + 1) + " 次）。");
         }
         Player acc = Bukkit.getPlayer(quest.acceptorId());
-        if (acc != null) acc.sendMessage("§e[委托] §6" + quest.title() + " §e被驳回（第 " + (quest.rejectCount() + 1) + " 次），请重新准备。");
+        if (acc != null) {
+            acc.sendMessage("§c[委托] §6" + quest.title() + " §c第 " + (quest.rejectCount() + 1) + " 次被驳回: §7" + reason);
+        }
+    }
+
+    @EventHandler
+    public void onChat(org.bukkit.event.player.AsyncPlayerChatEvent event) {
+        Player player = event.getPlayer();
+        Quest quest = pendingReject.get(player.getUniqueId());
+        if (quest == null) return;
+
+        event.setCancelled(true);
+        executeReject(player, quest, event.getMessage());
+    }
+
+    public boolean hasPendingInput(Player player) {
+        return pendingReject.containsKey(player.getUniqueId());
     }
 
     private void handleTerminate(Player player, Quest quest) {
