@@ -209,7 +209,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
     private boolean handlePublish(CommandSender sender) {
         if (!(sender instanceof Player player)) { sender.sendMessage("§c玩家专用命令。"); return true; }
-        plugin.getBoardClickListener().startPublish(player);
+        plugin.getBoardMenuHandler().startPublish(player);
         return true;
     }
 
@@ -217,12 +217,12 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         if (!(sender instanceof Player player)) { sender.sendMessage("§c玩家专用命令。"); return true; }
         if (args.length < 2) return true;
         return switch (args[1].toLowerCase()) {
-            case "mat" -> { plugin.getBoardClickListener().startMaterialCreation(player); yield true; }
-            case "build" -> { plugin.getBoardClickListener().startBuildCreation(player); yield true; }
-            case "tmat" -> { plugin.getBoardClickListener().startTownMaterialCreation(player); yield true; }
-            case "tbuild" -> { plugin.getBoardClickListener().startTownBuildCreation(player); yield true; }
-            case "confirm" -> { plugin.getBoardClickListener().confirmPublish(player); yield true; }
-            case "cancel" -> { plugin.getBoardClickListener().cancelPublish(player); yield true; }
+            case "mat" -> { plugin.getBoardMenuHandler().startMaterialCreation(player); yield true; }
+            case "build" -> { plugin.getBoardMenuHandler().startBuildCreation(player); yield true; }
+            case "tmat" -> { plugin.getBoardMenuHandler().startTownMaterialCreation(player); yield true; }
+            case "tbuild" -> { plugin.getBoardMenuHandler().startTownBuildCreation(player); yield true; }
+            case "confirm" -> { plugin.getBoardMenuHandler().confirmPublish(player); yield true; }
+            case "cancel" -> { plugin.getBoardMenuHandler().cancelPublish(player); yield true; }
             default -> true;
         };
     }

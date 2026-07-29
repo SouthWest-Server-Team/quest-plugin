@@ -2,6 +2,7 @@ package com.xinantown.quest;
 
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -58,5 +59,18 @@ public final class QuestScroll {
         String id = item.getItemMeta().getPersistentDataContainer()
                 .get(keyQuestId, PersistentDataType.STRING);
         return id != null ? UUID.fromString(id) : null;
+    }
+
+    public static void removeFromInventory(Player player, UUID questId, QuestPlugin plugin) {
+        QuestScroll scroll = new QuestScroll(plugin);
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            var item = player.getInventory().getItem(i);
+            if (scroll.isScroll(item)) {
+                var id = scroll.getQuestId(item);
+                if (id != null && id.equals(questId)) {
+                    player.getInventory().setItem(i, null);
+                }
+            }
+        }
     }
 }

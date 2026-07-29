@@ -11,7 +11,9 @@ public class QuestPlugin extends JavaPlugin {
     private ViolationManager violationManager;
     private QuestGuiManager guiManager;
     private BoardManager boardManager;
-    private BoardClickListener boardClickListener;
+    private BoardMenuHandler boardMenuHandler;
+    private BoardDisplayManager boardDisplayManager;
+    private BoardAcceptHandler boardAcceptHandler;
 
     @Override
     public void onEnable() {
@@ -28,9 +30,15 @@ public class QuestPlugin extends JavaPlugin {
         guiManager = new QuestGuiManager(this);
         getServer().getPluginManager().registerEvents(guiManager, this);
         getServer().getPluginManager().registerEvents(new BoardListener(boardManager), this);
-        boardClickListener = new BoardClickListener(this, boardManager, dataManager);
-        getServer().getPluginManager().registerEvents(boardClickListener, this);
-        boardClickListener.start();
+
+        boardDisplayManager = new BoardDisplayManager(this, boardManager, dataManager);
+        boardDisplayManager.start();
+
+        boardAcceptHandler = new BoardAcceptHandler(this, boardManager, boardDisplayManager, dataManager);
+        getServer().getPluginManager().registerEvents(boardAcceptHandler, this);
+
+        boardMenuHandler = new BoardMenuHandler(this, boardManager, dataManager);
+        getServer().getPluginManager().registerEvents(boardMenuHandler, this);
 
         new QuestScheduler(this).start();
         new CasusBelliListener(this).register();
@@ -40,6 +48,7 @@ public class QuestPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (boardDisplayManager != null) boardDisplayManager.stop();
         getLogger().info("QuestPlugin disabled.");
     }
 
@@ -48,5 +57,5 @@ public class QuestPlugin extends JavaPlugin {
     public QuestGuiManager getGuiManager() { return guiManager; }
     public ViolationManager getViolationManager() { return violationManager; }
     public BoardManager getBoardManager() { return boardManager; }
-    public BoardClickListener getBoardClickListener() { return boardClickListener; }
+    public BoardMenuHandler getBoardMenuHandler() { return boardMenuHandler; }
 }

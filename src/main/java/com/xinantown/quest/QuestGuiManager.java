@@ -178,7 +178,7 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward());
         }
         updateQuest(player, quest.complete());
-        removeScroll(player, quest);
+        QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
         player.sendMessage("§a委托已完成！物品已发放到你的背包。");
         Player acc = Bukkit.getPlayer(quest.acceptorId());
@@ -227,7 +227,7 @@ public class QuestGuiManager implements Listener {
             econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit());
         }
         updateQuest(player, quest.cancel());
-        removeScroll(player, quest);
+        QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
         player.sendMessage("§c委托已终止，双方押金已退还。");
     }
@@ -265,7 +265,7 @@ public class QuestGuiManager implements Listener {
             }
         }
         updateQuest(player, quest.cancel());
-        removeScroll(player, quest);
+        QuestScroll.removeFromInventory(player, quest.id(), plugin);
         player.closeInventory();
     }
 
@@ -294,18 +294,5 @@ public class QuestGuiManager implements Listener {
 
     private String truncate(String s, int max) {
         return s.length() > max ? s.substring(0, max) : s;
-    }
-
-    private void removeScroll(Player player, Quest quest) {
-        QuestScroll scroll = new QuestScroll(plugin);
-        for (int i = 0; i < player.getInventory().getSize(); i++) {
-            ItemStack item = player.getInventory().getItem(i);
-            if (scroll.isScroll(item)) {
-                UUID id = scroll.getQuestId(item);
-                if (id != null && id.equals(quest.id())) {
-                    player.getInventory().setItem(i, null);
-                }
-            }
-        }
     }
 }
