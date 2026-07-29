@@ -2,6 +2,10 @@ package com.xinantown.quest;
 
 import com.xinantown.quest.model.Quest;
 import com.xinantown.quest.model.QuestStatus;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -181,7 +185,15 @@ public class QuestGuiManager implements Listener {
         player.closeInventory();
         player.sendMessage("§a委托已提交，等待发布者确认！");
         Player pub = Bukkit.getPlayer(quest.publisherId());
-        if (pub != null) pub.sendMessage("§a[委托] §6" + quest.title() + " §a已提交，使用 §6/quest warehouse " + quest.id().toString().substring(0, 8) + " §a查看。");
+        if (pub != null) {
+            String shortId = quest.id().toString().substring(0, 8);
+            pub.sendMessage("§a[委托] §6" + quest.title() + " §a已提交，");
+            TextComponent click = new TextComponent("§6§l[点击这里打开仓库]");
+            click.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/quest warehouse " + shortId));
+            click.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                    new ComponentBuilder("§7打开 " + quest.title() + " 的仓库").create()));
+            pub.spigot().sendMessage(click);
+        }
     }
 
     private void handleSave(Player player, Quest quest, Inventory inv, int size) {
