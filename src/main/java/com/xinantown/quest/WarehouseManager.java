@@ -1,11 +1,13 @@
 package com.xinantown.quest;
 
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.Base64;
 import java.util.logging.Logger;
 
 /**
@@ -31,11 +33,21 @@ public class WarehouseManager {
         for (String key : cfg.getKeys(false)) {
             try {
                 int slot = Integer.parseInt(key);
-                ItemStack item = cfg.getItemStack(key);
+                Object raw = cfg.get(key);
+                ItemStack item;
+                if (raw instanceof String s && !s.isEmpty()) {
+                    item = ItemStack.deserializeBytes(Base64.getDecoder().decode(s));
+                } else if (raw instanceof ConfigurationSection) {
+                    item = cfg.getItemStack(key);
+                } else {
+                    item = null;
+                }
                 if (item != null && item.getType() != org.bukkit.Material.AIR) {
                     items.put(slot, item);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                logger.warning("Failed to load warehouse item at slot " + key + ": " + ex.getMessage());
+            }
         }
         return items;
     }
@@ -44,7 +56,11 @@ public class WarehouseManager {
         YamlConfiguration cfg = new YamlConfiguration();
         for (var e : items.entrySet()) {
             if (e.getValue() != null && e.getValue().getType() != org.bukkit.Material.AIR) {
-                cfg.set(String.valueOf(e.getKey()), e.getValue().clone());
+                try {
+                    cfg.set(String.valueOf(e.getKey()), Base64.getEncoder().encodeToString(e.getValue().clone().serializeAsBytes()));
+                } catch (Exception ex) {
+                    logger.warning("Failed to serialize warehouse item at slot " + e.getKey() + ": " + ex.getMessage());
+                }
             }
         }
         try { cfg.save(new File(folder, questId + ".yml")); } catch (IOException ex) {

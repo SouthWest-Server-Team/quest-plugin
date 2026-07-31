@@ -15,6 +15,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -111,7 +112,7 @@ public class QuestGuiManager implements Listener {
         cleanupScrollsOnJoin(event.getPlayer());
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Quest quest = openGuis.get(player.getUniqueId());
@@ -129,37 +130,39 @@ public class QuestGuiManager implements Listener {
         boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
         boolean isPublisher = quest.publisherId().equals(player.getUniqueId());
 
-        // Button clicks
-        String btn = getButtonLabel(event.getCurrentItem());
-        if (btn != null) {
-            event.setCancelled(true);
-            if (btn.equals("§a提交委托") && isAcceptor) handleSubmit(player, quest, event.getInventory(), size);
-            else if (btn.equals("§e暂存") && isAcceptor) handleSave(player, quest, event.getInventory(), size);
-            else if (btn.equals("§a同意") && isPublisher) {
-                if (approveConfirm.getOrDefault(player.getUniqueId(), false)) {
-                    approveConfirm.remove(player.getUniqueId());
-                    handleApprove(player, quest);
-                } else {
-                    approveConfirm.put(player.getUniqueId(), true);
-                    event.getInventory().setItem(slot, createButton(Material.GREEN_STAINED_GLASS_PANE, "§a确认同意"));
-                    int revertSlot = slot + 1;
-                    if (revertSlot < size) {
-                        event.getInventory().setItem(revertSlot, createButton(Material.GRAY_STAINED_GLASS_PANE, "§7返回"));
+        // Button clicks (top inventory only — player inventory items with colored names must not match)
+        if (event.getClickedInventory() != null && event.getClickedInventory().equals(event.getView().getTopInventory())) {
+            String btn = getButtonLabel(event.getCurrentItem());
+            if (btn != null) {
+                event.setCancelled(true);
+                if (btn.equals("§a提交委托") && isAcceptor) handleSubmit(player, quest, event.getInventory(), size);
+                else if (btn.equals("§e暂存") && isAcceptor) handleSave(player, quest, event.getInventory(), size);
+                else if (btn.equals("§a同意") && isPublisher) {
+                    if (approveConfirm.getOrDefault(player.getUniqueId(), false)) {
+                        approveConfirm.remove(player.getUniqueId());
+                        handleApprove(player, quest);
+                    } else {
+                        approveConfirm.put(player.getUniqueId(), true);
+                        event.getInventory().setItem(slot, createButton(Material.GREEN_STAINED_GLASS_PANE, "§a确认同意"));
+                        int revertSlot = slot + 1;
+                        if (revertSlot < size) {
+                            event.getInventory().setItem(revertSlot, createButton(Material.GRAY_STAINED_GLASS_PANE, "§7返回"));
+                        }
                     }
                 }
+                else if (btn.equals("§a确认同意") && isPublisher) {
+                    approveConfirm.remove(player.getUniqueId());
+                    handleApprove(player, quest);
+                }
+                else if (btn.equals("§7返回") && isPublisher) {
+                    approveConfirm.remove(player.getUniqueId());
+                    player.closeInventory();
+                }
+                else if (btn.startsWith("§c驳回") && isPublisher) handleReject(player, quest);
+                else if (btn.equals("§4终止委托") && isPublisher) handleTerminate(player, quest);
+                else if (btn.equals("§c取消委托") && (isPublisher || isAcceptor)) handleCancel(player, quest);
+                return;
             }
-            else if (btn.equals("§a确认同意") && isPublisher) {
-                approveConfirm.remove(player.getUniqueId());
-                handleApprove(player, quest);
-            }
-            else if (btn.equals("§7返回") && isPublisher) {
-                approveConfirm.remove(player.getUniqueId());
-                player.closeInventory();
-            }
-            else if (btn.startsWith("§c驳回") && isPublisher) handleReject(player, quest);
-            else if (btn.equals("§4终止委托") && isPublisher) handleTerminate(player, quest);
-            else if (btn.equals("§c取消委托") && (isPublisher || isAcceptor)) handleCancel(player, quest);
-            return;
         }
 
         // Acceptor can modify inventory; publisher is read-only
@@ -168,7 +171,62 @@ public class QuestGuiManager implements Listener {
         if (quest.status() == QuestStatus.SUBMITTED) { event.setCancelled(true); return; }
         // Allow clicks in main area only (not button row)
         if (slot >= size - 9 && slot < size) { event.setCancelled(true); return; }
+        // Shift-click from player inventory into warehouse: reject if main area (0..size-9) has no space
+        if (event.isShiftClick() && event.getClickedInventory() != null
+                && event.getClickedInventory().equals(event.getView().getBottomInventory())) {
+            ItemStack moved = event.getCurrentItem();
+            Inventory top = event.getView().getTopInventory();
+            boolean canFit = false;
+            if (moved != null && moved.getType() != Material.AIR) {
+                for (int i = 0; i < top.getSize() - 9; i++) {
+                    ItemStack existing = top.getItem(i);
+                    if (existing == null || existing.getType() == Material.AIR) {
+                        canFit = true;
+                        break;
+                    }
+                    if (existing.isSimilar(moved) && existing.getAmount() < existing.getMaxStackSize()) {
+                        canFit = true;
+                        break;
+                    }
+                }
+            }
+            if (!canFit) {
+                event.setCancelled(true);
+                return;
+            }
+        }
         // Click allowed — un-cancel in case other plugins (Slimefun) cancelled it
+        event.setCancelled(false);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        Quest quest = openGuis.get(player.getUniqueId());
+        if (quest == null) return;
+        // Guard: completed/cancelled quests have no interactive warehouse
+        if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) {
+            openGuis.remove(player.getUniqueId());
+            player.closeInventory();
+            return;
+        }
+        if (!event.getView().getTitle().contains("委托仓库")) return;
+
+        int size = event.getInventory().getSize();
+        boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
+
+        // Non-acceptor is read-only
+        if (!isAcceptor) { event.setCancelled(true); return; }
+        // Submitted: lock warehouse for acceptor too
+        if (quest.status() == QuestStatus.SUBMITTED) { event.setCancelled(true); return; }
+        // If the drag touches the button row, cancel it entirely
+        for (int rawSlot : event.getRawSlots()) {
+            if (rawSlot >= size - 9 && rawSlot < size) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+        // Drags in the main area or player inventory are allowed
         event.setCancelled(false);
     }
 
@@ -177,6 +235,10 @@ public class QuestGuiManager implements Listener {
         if (!(event.getPlayer() instanceof Player player)) return;
         Quest quest = openGuis.remove(player.getUniqueId());
         if (quest == null) return;
+        // Only the acceptor's open warehouse is auto-saved on close; publisher is read-only
+        boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
+        if (!isAcceptor) return;
+        if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) return;
         // Auto-save on close
         Map<Integer, ItemStack> items = new HashMap<>();
         for (int i = 0; i < event.getInventory().getSize() - 9; i++) {
