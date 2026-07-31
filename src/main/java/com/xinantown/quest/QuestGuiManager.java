@@ -58,11 +58,15 @@ public class QuestGuiManager implements Listener {
         // Add buttons on last row
         boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
         boolean isPublisher = quest.publisherId().equals(player.getUniqueId());
+        boolean isSubmitted = quest.status() == QuestStatus.SUBMITTED;
 
         if (isAcceptor && quest.status() == QuestStatus.ACCEPTED) {
             inv.setItem(size - 5, createButton(Material.LIME_STAINED_GLASS_PANE, "§a提交委托"));
             inv.setItem(size - 4, createButton(Material.YELLOW_STAINED_GLASS_PANE, "§e暂存"));
             inv.setItem(size - 3, createButton(Material.RED_STAINED_GLASS_PANE, "§c取消委托"));
+        }
+        if (isAcceptor && isSubmitted) {
+            inv.setItem(size - 5, createButton(Material.GRAY_STAINED_GLASS_PANE, "§7已提交，等待确认"));
         }
         if (isPublisher && quest.status() == QuestStatus.SUBMITTED) {
             inv.setItem(size - 6, createButton(Material.GREEN_STAINED_GLASS_PANE, "§a同意"));
@@ -154,6 +158,8 @@ public class QuestGuiManager implements Listener {
 
         // Acceptor can modify inventory; publisher is read-only
         if (!isAcceptor) { event.setCancelled(true); return; }
+        // Submitted: lock warehouse for acceptor too
+        if (quest.status() == QuestStatus.SUBMITTED) { event.setCancelled(true); return; }
         // Allow clicks in main area only (not button row)
         if (slot >= size - 9) { event.setCancelled(true); return; }
     }

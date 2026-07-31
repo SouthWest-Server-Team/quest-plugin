@@ -31,8 +31,11 @@ public class WarehouseManager {
         for (String key : cfg.getKeys(false)) {
             try {
                 int slot = Integer.parseInt(key);
-                items.put(slot, cfg.getItemStack(key));
-            } catch (NumberFormatException ignored) {}
+                var serialized = cfg.getConfigurationSection(key);
+                if (serialized != null) {
+                    items.put(slot, ItemStack.deserialize(serialized.getValues(false)));
+                }
+            } catch (Exception ignored) {}
         }
         return items;
     }
@@ -40,7 +43,7 @@ public class WarehouseManager {
     public void save(UUID questId, Map<Integer, ItemStack> items) {
         YamlConfiguration cfg = new YamlConfiguration();
         for (var e : items.entrySet()) {
-            cfg.set(String.valueOf(e.getKey()), e.getValue());
+            cfg.createSection(String.valueOf(e.getKey()), e.getValue().serialize());
         }
         try { cfg.save(new File(folder, questId + ".yml")); } catch (IOException ex) {
             logger.severe("Failed to save warehouse: " + ex.getMessage());
