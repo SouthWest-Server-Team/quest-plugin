@@ -47,6 +47,12 @@ public class QuestGuiManager implements Listener {
             player.sendMessage("§7该委托已结束，仓库已关闭。");
             return;
         }
+        // Guard: acceptor cannot open warehouse after submitting
+        boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
+        if (isAcceptor && quest.status() == QuestStatus.SUBMITTED) {
+            player.sendMessage("§7委托已提交，仓库已锁定，等待发布方确认。");
+            return;
+        }
         int size = 54;
         Inventory inv = Bukkit.createInventory(null, size, "§8委托仓库 - " + truncate(quest.title(), 20));
 
@@ -57,7 +63,6 @@ public class QuestGuiManager implements Listener {
         }
 
         // Add buttons on last row
-        boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
         boolean isPublisher = quest.publisherId().equals(player.getUniqueId());
         boolean isSubmitted = quest.status() == QuestStatus.SUBMITTED;
 
