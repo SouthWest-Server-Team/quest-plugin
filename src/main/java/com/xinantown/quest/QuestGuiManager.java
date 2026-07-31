@@ -11,7 +11,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -111,7 +110,7 @@ public class QuestGuiManager implements Listener {
         cleanupScrollsOnJoin(event.getPlayer());
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Quest quest = openGuis.get(player.getUniqueId());
@@ -167,7 +166,7 @@ public class QuestGuiManager implements Listener {
         // Submitted: lock warehouse for acceptor too
         if (quest.status() == QuestStatus.SUBMITTED) { event.setCancelled(true); return; }
         // Allow clicks in main area only (not button row)
-        if (slot >= size - 9) { event.setCancelled(true); return; }
+        if (slot >= size - 9 && slot < size) { event.setCancelled(true); return; }
     }
 
     @EventHandler
