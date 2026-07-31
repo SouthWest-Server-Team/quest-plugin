@@ -31,9 +31,9 @@ public class WarehouseManager {
         for (String key : cfg.getKeys(false)) {
             try {
                 int slot = Integer.parseInt(key);
-                var serialized = cfg.getConfigurationSection(key);
-                if (serialized != null) {
-                    items.put(slot, ItemStack.deserialize(serialized.getValues(false)));
+                ItemStack item = cfg.getItemStack(key);
+                if (item != null && item.getType() != org.bukkit.Material.AIR) {
+                    items.put(slot, item);
                 }
             } catch (Exception ignored) {}
         }
@@ -43,7 +43,9 @@ public class WarehouseManager {
     public void save(UUID questId, Map<Integer, ItemStack> items) {
         YamlConfiguration cfg = new YamlConfiguration();
         for (var e : items.entrySet()) {
-            cfg.createSection(String.valueOf(e.getKey()), e.getValue().serialize());
+            if (e.getValue() != null && e.getValue().getType() != org.bukkit.Material.AIR) {
+                cfg.set(String.valueOf(e.getKey()), e.getValue().clone());
+            }
         }
         try { cfg.save(new File(folder, questId + ".yml")); } catch (IOException ex) {
             logger.severe("Failed to save warehouse: " + ex.getMessage());
