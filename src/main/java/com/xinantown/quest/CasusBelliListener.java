@@ -7,7 +7,9 @@ import org.bukkit.event.Event;
 import org.bukkit.event.EventPriority;
 import org.bukkit.plugin.EventExecutor;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -21,6 +23,8 @@ public class CasusBelliListener {
     private final QuestDataManager dataManager;
     private final ViolationManager violationManager;
     private final Logger logger;
+    /** Prevents the 30-second polling task from punishing the same quest/war pair repeatedly. */
+    private final Set<String> processedWarQuestPairs = new HashSet<>();
 
     public CasusBelliListener(QuestPlugin plugin) {
         this.plugin = plugin;
@@ -30,7 +34,7 @@ public class CasusBelliListener {
     }
 
     public void register() {
-        if (Bukkit.getPluginManager().getPlugin("CasusBelli") == null) {
+        if (Bukkit.getPluginManager().getPlugin("War") == null) {
             logger.info("CasusBelli not found — violation integration disabled.");
             return;
         }
@@ -80,24 +84,22 @@ public class CasusBelliListener {
                 if (publisherTown == null || acceptorTown == null) continue;
 
                 // Check for active CasusBelli war between these towns
-                boolean atWar = checkCasusBelliWar(publisherTown.getName(), acceptorTown.getName());
-                if (atWar && !q.isTownAcceptor()) {
-                    // Only flag the attacker (acceptor) if they initiated war
-                    // For simplicity: flag both sides
-                    violationManager.addViolation(publisherTown.getName());
-                    violationManager.addViolation(acceptorTown.getName());
-                    logger.info("Violation recorded for " + publisherTown.getName()
-                            + " and " + acceptorTown.getName() + " due to war during quest " + q.title());
+                String attackerTown = findActiveWarAttacker(publisherTown.getName(), acceptorTown.getName());
+                String processedKey = q.id() + ":" + publisherTown.getName().toLowerCase() + ":" + acceptorTown.getName().toLowerCase();
+                if (attackerTown != null && processedWarQuestPairs.add(processedKey)) {
+                    violationManager.addViolation(attackerTown);
+                    logger.info("Violation recorded only for declaring town " + attackerTown
+                            + " due to war during quest " + q.title());
                 }
             } catch (Exception ignored) {}
         }
     }
 
-    private boolean checkCasusBelliWar(String town1, String town2) {
-        // Use CasusBelli API via reflection
+    private String findActiveWarAttacker(String town1, String town2) {
+        // Use the published War API via reflection; only an ACTIVE war can cause a violation.
         try {
-            var cbPlugin = Bukkit.getPluginManager().getPlugin("CasusBelli");
-            if (cbPlugin == null) return false;
+            var cbPlugin = Bukkit.getPluginManager().getPlugin("War");
+            if (cbPlugin == null) return null;
 
             var warManager = cbPlugin.getClass().getMethod("getWarManager").invoke(cbPlugin);
             @SuppressWarnings("unchecked")
@@ -105,16 +107,18 @@ public class CasusBelliListener {
                     .getMethod("getActiveWars").invoke(warManager);
 
             for (var war : wars) {
+                Object status = war.getClass().getMethod("getStatus").invoke(war);
+                if (status == null || !"ACTIVE".equals(status.toString())) continue;
                 String attacker = (String) war.getClass().getMethod("getAttackerTown").invoke(war);
                 String defender = (String) war.getClass().getMethod("getDefenderTown").invoke(war);
                 if ((attacker.equalsIgnoreCase(town1) && defender.equalsIgnoreCase(town2))
                         || (attacker.equalsIgnoreCase(town2) && defender.equalsIgnoreCase(town1))) {
-                    return true;
+                    return attacker;
                 }
             }
         } catch (Exception e) {
             // CasusBelli API not available — no war to check
         }
-        return false;
+        return null;
     }
 }
