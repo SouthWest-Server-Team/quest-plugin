@@ -119,7 +119,7 @@ model/
 ## 构建
 
 ```bash
-# JDK 17+
+# JDK 21+
 mvnw clean package
 # 输出: target/Quest-1.0.0-SNAPSHOT.jar
 ```

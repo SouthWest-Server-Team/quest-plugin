@@ -13,7 +13,7 @@
     <description>城邦委托系统 — 个人/城邦发布与接取资源委托</description>
 
     <properties>
-        <java.version>17</java.version>
+        <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
