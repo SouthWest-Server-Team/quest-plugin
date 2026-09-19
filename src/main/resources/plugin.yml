@@ -3,7 +3,7 @@ version: 1.0.0
 main: com.xinantown.quest.QuestPlugin
 api-version: '1.21.11'
 depend: [Vault, Towny]
-softdepend: [War]
+softdepend: [War, XiNanTown-Integration]
 commands:
   quest:
     description: 委托系统

@@ -14,6 +14,7 @@ public class QuestPlugin extends JavaPlugin {
     private BoardMenuHandler boardMenuHandler;
     private BoardDisplayManager boardDisplayManager;
     private BoardAcceptHandler boardAcceptHandler;
+    private CasusBelliListener casusBelliListener;
 
     @Override
     public void onEnable() {
@@ -46,7 +47,8 @@ public class QuestPlugin extends JavaPlugin {
                 new DisplayUpdateListener(boardDisplayManager), this);
 
         new QuestScheduler(this).start();
-        new CasusBelliListener(this).register();
+        casusBelliListener = new CasusBelliListener(this);
+        casusBelliListener.register();
 
         getLogger().info("QuestPlugin enabled.");
     }
@@ -54,6 +56,7 @@ public class QuestPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         if (boardDisplayManager != null) boardDisplayManager.stop();
+        if (casusBelliListener != null) casusBelliListener.stop();
         getLogger().info("QuestPlugin disabled.");
     }
 

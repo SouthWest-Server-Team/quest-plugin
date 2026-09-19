@@ -15,10 +15,26 @@ public class QuestDataManager {
     private final Logger logger;
     private final File dataFile;
     private List<Quest> cache;
+    /**
+     * 委托数据变更回调。所有委托状态变更都必然经过 {@link #saveAll}，因此这是本插件
+     * 「委托事实发生变化」的完整信号（用于唤醒依赖委托状态的检测，避免无条件轮询）。
+     */
+    private volatile Runnable changeListener;
 
     public QuestDataManager(File dataFile, Logger logger) {
         this.dataFile = dataFile;
         this.logger = logger;
+    }
+
+    /**
+     * 注册委托数据变更回调；每次成功写入后调用一次。
+     *
+     * <p>回调抛出的异常会被吞掉并记日志，不会影响委托本身的保存行为。
+     *
+     * @param listener 回调，传 {@code null} 表示取消注册
+     */
+    public void setChangeListener(Runnable listener) {
+        this.changeListener = listener;
     }
 
     public synchronized List<Quest> loadAll() {
@@ -30,6 +46,17 @@ public class QuestDataManager {
     public synchronized void saveAll(List<Quest> quests) {
         this.cache = new ArrayList<>(quests);
         saveToDisk(quests);
+        notifyChanged();
+    }
+
+    private void notifyChanged() {
+        Runnable listener = changeListener;
+        if (listener == null) return;
+        try {
+            listener.run();
+        } catch (RuntimeException failure) {
+            logger.warning("Quest change listener failed: " + failure);
+        }
     }
 
     private List<Quest> loadFromDisk() {

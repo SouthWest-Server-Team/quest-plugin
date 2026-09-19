@@ -18,3 +18,7 @@ board-warn-hours: 24
 board-urgent-copies: 3
 # 热卖加权: 预警委托的队列副本数
 board-warn-copies: 2
+# CasusBelli 违约检测对账间隔（秒）。
+# 检测由委托数据变更唤醒，且只在存在「已接取的城邦委托」时才轮询；没有此类委托时完全停止轮询。
+# 对账是电平式的（每次重新读当前战争状态），不会漏掉战争状态变化，间隔只影响发现延迟。
+war-violation-check-seconds: 60

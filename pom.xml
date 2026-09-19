@@ -55,6 +55,14 @@
             <version>1.7</version>
             <scope>provided</scope>
         </dependency>
+        <!-- 交互层公共契约（xinantown-api）：编译期依赖，运行时由 XiNanTown-Integration 插件提供，
+             不 shade、不打包，避免同一契约出现两份类定义；交互层缺失时违约检测降级为关闭。 -->
+        <dependency>
+            <groupId>com.xinantown</groupId>
+            <artifactId>xinantown-api</artifactId>
+            <version>2.0.0-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
