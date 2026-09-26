@@ -34,6 +34,8 @@ public class BoardMenuHandler implements Listener {
         double reward, deposit;
         int step;
         boolean isTown;
+        /** 城邦委托的归属城邦（发布者发布时所在的本城邦），个人委托为 null。 */
+        String townId, townName;
     }
 
     public BoardMenuHandler(QuestPlugin plugin, BoardManager boardManager, QuestDataManager dataManager) {
@@ -113,24 +115,45 @@ public class BoardMenuHandler implements Listener {
                 : "§e[第1步] §7请输入委托标题（例: §f城堡建造§7）：");
     }
 
-    private boolean checkMayor(Player player) {
-        var town = com.palmergames.bukkit.towny.TownyAPI.getInstance().getTown(player);
-        if (town == null) { player.sendMessage("§c你不属于任何城邦！"); return false; }
-        if (!town.hasMayor() || !town.getMayor().getUUID().equals(player.getUniqueId())) {
-            player.sendMessage("§c只有市长才能发布城邦委托！"); return false; }
-        return true;
+    /**
+     * 城邦委托发布权：经交互层只读能力取「玩家此刻站着的城邦」，而不是直连 Towny 内部类。
+     *
+     * <p>只有站在自己城邦（{@code homeTown}）领地上的玩家才能代表该城邦发布。
+     * <b>已知契约缺口</b>：{@code PlayerTownSnapshot} 无角色字段，改造前「只有市长能发布」的市长判定
+     * 无法经交互层完成，此处退化到「本城邦成员」这一契约能给的最强证据（已在回传中标注）。
+     *
+     * @return 发布者代表的城邦视图；无城邦信息或不是本城邦成员时返回 {@code null} 并已提示玩家
+     */
+    private com.xinantown.quest.town.PlayerTownView townBindingOf(Player player) {
+        var view = com.xinantown.quest.town.TownQueryBridge.viewOf(
+                plugin.getTownQueryBridge(), player.getUniqueId());
+        if (!view.hasTown()) {
+            player.sendMessage("§c城邦委托只能由城邦代表发布：需要站在本城土地上，且城邦信息可用。");
+            return null;
+        }
+        if (!view.homeTown()) {
+            player.sendMessage("§c只有本城邦的成员才能代表城邦发布委托！");
+            return null;
+        }
+        return view;
     }
 
     public void startMaterialCreation(Player player) { startCreation(player, "material", false); }
     public void startBuildCreation(Player player) { startCreation(player, "build", false); }
 
-    public void startTownMaterialCreation(Player player) {
-        if (!checkMayor(player)) return;
-        startCreation(player, "material", true);
-    }
-    public void startTownBuildCreation(Player player) {
-        if (!checkMayor(player)) return;
-        startCreation(player, "build", true);
+    public void startTownMaterialCreation(Player player) { startTownCreation(player, "material"); }
+    public void startTownBuildCreation(Player player) { startTownCreation(player, "build"); }
+
+    /** 城邦委托：先确认发布权，再把归属城邦记进发布流程，最终随委托一起落盘。 */
+    private void startTownCreation(Player player, String type) {
+        var view = townBindingOf(player);
+        if (view == null) return;
+        startCreation(player, type, true);
+        CreationState s = creationStates.get(player.getUniqueId());
+        if (s != null) {
+            s.townId = view.townId();
+            s.townName = view.townName();
+        }
     }
 
     void handleCreationInput(Player player, String input) {
@@ -187,7 +210,9 @@ public class BoardMenuHandler implements Listener {
         var quest = new com.xinantown.quest.model.Quest(UUID.randomUUID(), s.title, player.getUniqueId(), player.getName(),
                 s.isTown, s.type, s.desc, s.reward, s.deposit,
                 now + 86400000L * acceptDays, now + 86400000L * completeDays,
-                QuestStatus.OPEN, null, null, false, 0);
+                QuestStatus.OPEN, null, null, false, 0,
+                // 城邦归属（A10）：个人委托为 null；城邦委托在发布权校验时已确定
+                s.isTown ? s.townId : null, s.isTown ? s.townName : null);
         List<com.xinantown.quest.model.Quest> all = new ArrayList<>(dataManager.loadAll());
         all.add(quest);
         dataManager.saveAll(all);

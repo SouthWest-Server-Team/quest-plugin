@@ -56,10 +56,9 @@ public class QuestScheduler implements Runnable {
                     if (econ != null) econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.publisherId()), q.deposit() + q.reward());
                 }
                 if (q.status() == QuestStatus.ACCEPTED && q.acceptorId() != null) {
-                    // Register violation for acceptor
-                    var town = com.palmergames.bukkit.towny.TownyAPI.getInstance().getTown(
-                            Bukkit.getOfflinePlayer(q.acceptorId()).getUniqueId());
-                    if (town != null) plugin.getViolationManager().addViolation(town.getName());
+                    // Register violation for acceptor（经交互层取城邦，不直连 Towny 内部类）
+                    String townName = acceptorTownName(q);
+                    if (townName != null) plugin.getViolationManager().addViolation(townName);
 
                     var econ = Bukkit.getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
                     if (econ != null) {
@@ -95,5 +94,19 @@ public class QuestScheduler implements Runnable {
     private void notify(java.util.UUID uuid, String msg) {
         Player p = Bukkit.getPlayer(uuid);
         if (p != null) p.sendMessage(msg);
+    }
+
+    /**
+     * 违约记账用的城邦名（语义与改造前一致：接取方所属城邦）。
+     *
+     * <p>优先经交互层查接取方此刻的城邦；查不到（玩家离线、交互层不可用）但这条城邦委托有归属城邦时，
+     * 退回用委托自己的归属城邦名 —— 改造前 {@code TownyAPI.getTown(UUID)} 对离线玩家也能解析，
+     * 这样离线接取方的违约不会被漏记。
+     */
+    private String acceptorTownName(Quest q) {
+        var view = com.xinantown.quest.town.TownQueryBridge.viewOf(plugin.getTownQueryBridge(), q.acceptorId());
+        if (view.hasTown()) return view.townName();
+        if (q.isTownQuest() && q.townName() != null && !q.townName().isBlank()) return q.townName();
+        return null;
     }
 }

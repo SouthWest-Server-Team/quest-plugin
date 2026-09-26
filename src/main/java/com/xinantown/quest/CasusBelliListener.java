@@ -1,7 +1,5 @@
 package com.xinantown.quest;
 
-import com.palmergames.bukkit.towny.TownyAPI;
-import com.palmergames.bukkit.towny.object.Town;
 import com.xinantown.quest.model.Quest;
 import com.xinantown.quest.model.QuestStatus;
 import com.xinantown.quest.war.WarInfoBridge;
@@ -187,8 +185,9 @@ public class CasusBelliListener {
         if (cache.containsKey(playerId)) {
             return cache.get(playerId);
         }
-        Town town = TownyAPI.getInstance().getTown(playerId);
-        String name = (town == null) ? null : town.getName();
+        // 城邦名经交互层只读能力获取（不再直连 Towny 内部类）。
+        var view = com.xinantown.quest.town.TownQueryBridge.viewOf(plugin.getTownQueryBridge(), playerId);
+        String name = view.hasTown() ? view.townName() : null;
         cache.put(playerId, name);
         return name;
     }

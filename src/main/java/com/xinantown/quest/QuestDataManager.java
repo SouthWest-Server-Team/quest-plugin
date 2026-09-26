@@ -87,7 +87,11 @@ public class QuestDataManager {
                         q.contains("acceptorId") ? UUID.fromString(q.getString("acceptorId")) : null,
                         q.getString("acceptorName", null),
                         q.getBoolean("isTownAcceptor", false),
-                        q.getInt("rejectCount", 0)));
+                        q.getInt("rejectCount", 0),
+                        // 城邦归属（A10）：改造前落盘的数据没有这两个键 ⇒ null ⇒ 「无归属城邦委托」，
+                        // 数据保留、不静默丢弃（可见性/代表权规则见 QuestTownPolicy）。
+                        q.getString("townId", null),
+                        q.getString("townName", null)));
             } catch (Exception e) {
                 logger.warning("Skipping invalid quest entry: " + key);
             }
@@ -115,6 +119,8 @@ public class QuestDataManager {
             if (q.acceptorName() != null) qs.set("acceptorName", q.acceptorName());
             qs.set("isTownAcceptor", q.isTownAcceptor());
             qs.set("rejectCount", q.rejectCount());
+            if (q.townId() != null) qs.set("townId", q.townId());
+            if (q.townName() != null) qs.set("townName", q.townName());
         }
         try { cfg.save(dataFile); } catch (IOException e) {
             logger.severe("Failed to save quests: " + e.getMessage());

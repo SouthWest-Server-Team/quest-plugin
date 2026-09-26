@@ -44,12 +44,6 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.palmergames.bukkit.towny</groupId>
-            <artifactId>towny</artifactId>
-            <version>0.103.1.0</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
             <groupId>com.github.MilkBowl</groupId>
             <artifactId>VaultAPI</artifactId>
             <version>1.7</version>

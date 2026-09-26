@@ -30,15 +30,25 @@ public class BoardManager {
 
     // ==================== CRUD ====================
 
-    /** Place a new board at the given location. */
+    /** Place a new board at the given location (not bound to any town). */
     public Board createBoard(Location loc, String type, QuestFilter questFilter) {
+        return createBoard(loc, type, questFilter, null);
+    }
+
+    /**
+     * Place a new board at the given location, bound to {@code townId}.
+     *
+     * @param townId owning town key (interaction-layer {@code TownId} text); {@code null} = 未绑定城邦，
+     *               该板只轮播个人委托
+     */
+    public Board createBoard(Location loc, String type, QuestFilter questFilter, String townId) {
         String id = "board_" + (nextId++);
         int groupId = 0;
         if ("display".equals(type)) {
             groupId = nextGroupId++; // temporary, will be recalculated
         }
         Board board = new Board(id, loc.getWorld().getName(),
-                loc.getBlockX(), loc.getBlockY(), loc.getBlockZ(), type, groupId, questFilter);
+                loc.getBlockX(), loc.getBlockY(), loc.getBlockZ(), type, groupId, questFilter, townId);
         boards.put(id, board);
         recalculateGroups();
         save();
@@ -117,7 +127,8 @@ public class BoardManager {
                 Board current = queue.poll();
                 // Update group
                 Board updated = new Board(current.id(), current.world(),
-                        current.x(), current.y(), current.z(), current.type(), groupId, current.questFilter());
+                        current.x(), current.y(), current.z(), current.type(), groupId, current.questFilter(),
+                        current.townId());
                 boards.put(current.id(), updated);
 
                 // Check 4 neighbors
@@ -163,7 +174,9 @@ public class BoardManager {
                     s.getInt("x"), s.getInt("y"), s.getInt("z"),
                     s.getString("type", "display"),
                     s.getInt("group_id", 0),
-                    QuestFilter.fromString(s.getString("quest_filter", null)));
+                    QuestFilter.fromString(s.getString("quest_filter", null)),
+                    // 城邦绑定（A10）：改造前落盘的板子没有该键 ⇒ null ⇒ 未绑定
+                    s.getString("townId", null));
             boards.put(id, board);
         }
     }
@@ -182,6 +195,7 @@ public class BoardManager {
             s.set("type", b.type());
             s.set("group_id", b.groupId());
             s.set("quest_filter", b.questFilter().name());
+            if (b.townId() != null) s.set("townId", b.townId());
         }
 
         try { cfg.save(file); } catch (IOException ex) {

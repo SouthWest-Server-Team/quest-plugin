@@ -127,13 +127,19 @@ public class BoardAcceptHandler implements Listener {
         }
         if (quest.publisherId().equals(player.getUniqueId())) { player.sendMessage("§c不能接取自己的委托。"); return; }
         if (quest.isTownQuest()) {
-            var town = com.palmergames.bukkit.towny.TownyAPI.getInstance().getTown(player);
-            if (town == null) { player.sendMessage("§c城邦委托只能由城邦接取！"); return; }
-            if (plugin.getViolationManager().isBanned(town.getName())) {
-                long h = (plugin.getViolationManager().getBanEnd(town.getName()) - System.currentTimeMillis()) / 3600000;
+            var view = com.xinantown.quest.town.TownQueryBridge.viewOf(
+                    plugin.getTownQueryBridge(), player.getUniqueId());
+            if (com.xinantown.quest.town.QuestTownPolicy.isUnownedTownQuest(quest)) {
+                player.sendMessage("§c这条城邦委托没有归属城邦（改造前的历史数据），无法接取。"); return;
+            }
+            if (!view.hasTown()) { player.sendMessage("§c城邦委托只能由城邦接取！(城邦信息不可用)"); return; }
+            if (!com.xinantown.quest.town.QuestTownPolicy.canRepresent(quest, view)) {
+                player.sendMessage("§c只有该城邦的成员才能代表城邦接取委托！"); return; }
+            String townName = quest.townName() != null && !quest.townName().isBlank()
+                    ? quest.townName() : view.townName();
+            if (plugin.getViolationManager().isBanned(townName)) {
+                long h = (plugin.getViolationManager().getBanEnd(townName) - System.currentTimeMillis()) / 3600000;
                 player.sendMessage("§c城邦处于违约状态，剩余 " + h + " 小时。"); return; }
-            if (!town.hasMayor() || !town.getMayor().getUUID().equals(player.getUniqueId())) {
-                player.sendMessage("§c只有市长才能代表城邦接取委托！"); return; }
         }
         if (econ == null) { player.sendMessage("§c经济系统未就绪。"); return; }
         double deposit = quest.deposit();

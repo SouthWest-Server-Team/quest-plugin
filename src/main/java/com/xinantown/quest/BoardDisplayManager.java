@@ -182,11 +182,12 @@ public class BoardDisplayManager {
 
             for (int i = 0; i < sorted.size(); i++) {
                 Board board = sorted.get(i);
-                // Per-board filter: respect questFilter
+                // Per-board filter: respect questFilter and town binding (A10 城邦隔离)
                 var filtered = queue.stream()
                         .filter(q -> board.questFilter() == QuestFilter.ALL
                                 || (board.questFilter() == QuestFilter.PERSONAL && !q.isTownQuest())
                                 || (board.questFilter() == QuestFilter.TOWN && q.isTownQuest()))
+                        .filter(q -> com.xinantown.quest.town.QuestTownPolicy.visibleOnBoard(q, board.townId()))
                         .filter(q -> !usedQuestIds.contains(q.id()))
                         .toList();
                 var available = filtered.isEmpty() ? null : filtered.get(0);
