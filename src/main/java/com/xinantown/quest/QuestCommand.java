@@ -100,7 +100,7 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         }
 
         if (econ == null) { player.sendMessage("§c经济系统未就绪。"); return true; }
-        double deposit = found.deposit();
+        double deposit = SettlementRules.acceptorPrepayment(found.deposit());
         if (!econ.has(player, deposit)) {
             player.sendMessage("§c余额不足！需要支付押金 $" + String.format("%.0f", deposit)); return true;
         }
