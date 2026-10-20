@@ -53,7 +53,7 @@ public class QuestScheduler implements Runnable {
                 if (q.status() == QuestStatus.OPEN) {
                     // Return deposit
                     var econ = Bukkit.getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
-                    if (econ != null) econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.publisherId()), q.deposit() + q.reward());
+                    if (econ != null) econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.publisherId()), SettlementRules.publisherRefundOnExpireBeforeAccepted(q.deposit(), q.reward()));
                 }
                 if (q.status() == QuestStatus.ACCEPTED && q.acceptorId() != null) {
                     // Register violation for acceptor
@@ -63,10 +63,10 @@ public class QuestScheduler implements Runnable {
 
                     var econ = Bukkit.getServicesManager().getRegistration(net.milkbowl.vault.economy.Economy.class);
                     if (econ != null) {
-                        double penalty = q.reward() * plugin.getConfig().getDouble("cancel-penalty-acceptor", 3.0);
+                        double penalty = SettlementRules.acceptorExpirePenalty(q.reward(), plugin.getConfig().getDouble("cancel-penalty-acceptor", 3.0));
                         econ.getProvider().withdrawPlayer(Bukkit.getOfflinePlayer(q.acceptorId()), penalty);
-                        econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.publisherId()), penalty + q.deposit() + q.reward());
-                        econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.acceptorId()), q.deposit());
+                        econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.publisherId()), SettlementRules.publisherReceiptsOnExpireAccepted(penalty, q.deposit(), q.reward()));
+                        econ.getProvider().depositPlayer(Bukkit.getOfflinePlayer(q.acceptorId()), SettlementRules.acceptorRefundOnExpireAccepted(q.deposit()));
                     }
                 }
             }
