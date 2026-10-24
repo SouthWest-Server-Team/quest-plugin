@@ -142,7 +142,7 @@ public class BoardAcceptHandler implements Listener {
                 player.sendMessage("§c城邦处于违约状态，剩余 " + h + " 小时。"); return; }
         }
         if (econ == null) { player.sendMessage("§c经济系统未就绪。"); return; }
-        double deposit = quest.deposit();
+        double deposit = SettlementRules.acceptorPrepayment(quest.deposit());
         if (!econ.has(player, deposit)) { player.sendMessage("§c余额不足！需要 $" + String.format("%.0f", deposit)); return; }
         econ.withdrawPlayer(player, deposit);
 

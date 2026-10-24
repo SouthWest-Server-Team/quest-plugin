@@ -201,7 +201,7 @@ public class BoardMenuHandler implements Listener {
         CreationState s = creationStates.get(player.getUniqueId());
         if (s == null || s.step != 5) return;
         if (econ == null) { player.sendMessage("§c经济系统未就绪。"); creationStates.remove(player.getUniqueId()); return; }
-        double total = s.deposit + s.reward;
+        double total = SettlementRules.publisherPrepayment(s.deposit, s.reward);
         if (!econ.has(player, total)) { player.sendMessage("§c余额不足！需要 $" + String.format("%.0f", total)); creationStates.remove(player.getUniqueId()); return; }
         econ.withdrawPlayer(player, total);
         long now = System.currentTimeMillis();

@@ -302,8 +302,8 @@ public class QuestGuiManager implements Listener {
         }
 
         if (econ != null) {
-            econ.depositPlayer(player, quest.deposit());
-            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit() + quest.reward());
+            econ.depositPlayer(player, SettlementRules.publisherRefundOnComplete(quest.deposit()));
+            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), SettlementRules.acceptorPayoutOnComplete(quest.deposit(), quest.reward()));
         }
         updateQuest(player, quest.complete());
         Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestCompletedEvent(quest));
@@ -351,8 +351,8 @@ public class QuestGuiManager implements Listener {
 
     private void handleTerminate(Player player, Quest quest) {
         if (econ != null) {
-            econ.depositPlayer(player, quest.deposit());
-            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), quest.deposit());
+            econ.depositPlayer(player, SettlementRules.publisherRefundOnTerminate(quest.deposit()));
+            econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), SettlementRules.acceptorRefundOnTerminate(quest.deposit()));
         }
         updateQuest(player, quest.cancel());
         Bukkit.getPluginManager().callEvent(new com.xinantown.quest.event.QuestCompletedEvent(quest));
@@ -371,30 +371,30 @@ public class QuestGuiManager implements Listener {
         if (econ != null) {
             if (quest.status() == QuestStatus.ACCEPTED) {
                 if (isPublisher) {
-                    double penalty = quest.reward() * plugin.getConfig().getDouble("cancel-penalty-publisher", 0.5);
+                    double penalty = SettlementRules.publisherCancelPenalty(quest.reward(), plugin.getConfig().getDouble("cancel-penalty-publisher", 0.5));
                     if (!econ.has(player, penalty)) {
                         player.sendMessage("§c余额不足，无法支付取消罚款 $" + String.format("%.0f", penalty));
                         return;
                     }
                     econ.withdrawPlayer(player, penalty);
                     econ.depositPlayer(Bukkit.getOfflinePlayer(quest.acceptorId()), penalty);
-                    econ.depositPlayer(player, quest.deposit()); // 退回押金
+                    econ.depositPlayer(player, SettlementRules.cancellerRefund(quest.deposit())); // 退回押金
                     player.sendMessage("§c委托已取消，罚款 $" + String.format("%.0f", penalty) + " 已支付，押金已退还。");
                 } else {
                     // Acceptor cancel
-                    double penalty = quest.reward() * plugin.getConfig().getDouble("cancel-penalty-acceptor", 3.0);
+                    double penalty = SettlementRules.acceptorCancelPenalty(quest.reward(), plugin.getConfig().getDouble("cancel-penalty-acceptor", 3.0));
                     if (!econ.has(player, penalty)) {
                         player.sendMessage("§c余额不足，无法支付取消罚款 $" + String.format("%.0f", penalty));
                         return;
                     }
                     econ.withdrawPlayer(player, penalty);
                     econ.depositPlayer(Bukkit.getOfflinePlayer(quest.publisherId()), penalty);
-                    econ.depositPlayer(player, quest.deposit()); // 退回押金
+                    econ.depositPlayer(player, SettlementRules.cancellerRefund(quest.deposit())); // 退回押金
                     player.sendMessage("§c委托已取消，罚款 $" + String.format("%.0f", penalty) + " 已支付，押金已退还。");
                 }
             } else {
                 // Not yet accepted — just refund deposit
-                econ.depositPlayer(player, quest.deposit());
+                econ.depositPlayer(player, SettlementRules.publisherRefundOnWithdraw(quest.deposit()));
                 player.sendMessage("§e委托已撤回，押金已退还。");
             }
         }
