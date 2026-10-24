@@ -32,7 +32,7 @@ public class QuestGuiManager implements Listener {
     private final QuestDataManager dataManager;
     private final Map<UUID, Quest> openGuis = new HashMap<>();
     private final Map<UUID, Boolean> approveConfirm = new HashMap<>(); // confirm state
-    private final Map<UUID, Quest> pendingReject = new HashMap<>(); // awaiting reason
+    private final Map<UUID, Quest> pendingReject = new java.util.concurrent.ConcurrentHashMap<>(); // async chat lookup only
     private Economy econ;
 
     public QuestGuiManager(QuestPlugin plugin) {
@@ -43,6 +43,12 @@ public class QuestGuiManager implements Listener {
     }
 
     public void openWarehouse(Player player, Quest quest) {
+        UUID questId = quest.id();
+        quest = dataManager.loadAll().stream().filter(q -> q.id().equals(questId)).findFirst().orElse(null);
+        if (quest == null) {
+            player.sendMessage("§7该委托已不存在。");
+            return;
+        }
         // Guard: completed or cancelled quests have no warehouse
         if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) {
             player.sendMessage("§7该委托已结束，仓库已关闭。");
@@ -117,8 +123,15 @@ public class QuestGuiManager implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Quest quest = openGuis.get(player.getUniqueId());
         if (quest == null) return;
+        if (!event.getView().getTitle().contains("委托仓库")) return;
+        if (!isCurrent(quest)) {
+            event.setCancelled(true);
+            closeStaleView(player);
+            return;
+        }
         // Guard: completed/cancelled quests have no interactive warehouse
         if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) {
+            event.setCancelled(true);
             openGuis.remove(player.getUniqueId());
             player.closeInventory();
             return;
@@ -135,9 +148,9 @@ public class QuestGuiManager implements Listener {
             String btn = getButtonLabel(event.getCurrentItem());
             if (btn != null) {
                 event.setCancelled(true);
-                if (btn.equals("§a提交委托") && isAcceptor) handleSubmit(player, quest, event.getInventory(), size);
-                else if (btn.equals("§e暂存") && isAcceptor) handleSave(player, quest, event.getInventory(), size);
-                else if (btn.equals("§a同意") && isPublisher) {
+                if (btn.equals("§a提交委托") && isAcceptor && quest.status() == QuestStatus.ACCEPTED) handleSubmit(player, quest, event.getInventory(), size);
+                else if (btn.equals("§e暂存") && isAcceptor && quest.status() == QuestStatus.ACCEPTED) handleSave(player, quest, event.getInventory(), size);
+                else if (btn.equals("§a同意") && isPublisher && quest.status() == QuestStatus.SUBMITTED) {
                     if (approveConfirm.getOrDefault(player.getUniqueId(), false)) {
                         approveConfirm.remove(player.getUniqueId());
                         handleApprove(player, quest);
@@ -150,7 +163,7 @@ public class QuestGuiManager implements Listener {
                         }
                     }
                 }
-                else if (btn.equals("§a确认同意") && isPublisher) {
+                else if (btn.equals("§a确认同意") && isPublisher && quest.status() == QuestStatus.SUBMITTED) {
                     approveConfirm.remove(player.getUniqueId());
                     handleApprove(player, quest);
                 }
@@ -158,8 +171,9 @@ public class QuestGuiManager implements Listener {
                     approveConfirm.remove(player.getUniqueId());
                     player.closeInventory();
                 }
-                else if (btn.startsWith("§c驳回") && isPublisher) handleReject(player, quest);
-                else if (btn.equals("§4终止委托") && isPublisher) handleTerminate(player, quest);
+                else if (btn.startsWith("§c驳回") && isPublisher && quest.status() == QuestStatus.SUBMITTED) handleReject(player, quest);
+                else if (btn.equals("§4终止委托") && isPublisher && quest.status() == QuestStatus.SUBMITTED
+                        && quest.rejectCount() >= plugin.getConfig().getInt("max-rejects", 5) - 1) handleTerminate(player, quest);
                 else if (btn.equals("§c取消委托") && (isPublisher || isAcceptor)) handleCancel(player, quest);
                 return;
             }
@@ -204,8 +218,15 @@ public class QuestGuiManager implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Quest quest = openGuis.get(player.getUniqueId());
         if (quest == null) return;
+        if (!event.getView().getTitle().contains("委托仓库")) return;
+        if (!isCurrent(quest)) {
+            event.setCancelled(true);
+            closeStaleView(player);
+            return;
+        }
         // Guard: completed/cancelled quests have no interactive warehouse
         if (quest.status() == QuestStatus.COMPLETED || quest.status() == QuestStatus.CANCELLED) {
+            event.setCancelled(true);
             openGuis.remove(player.getUniqueId());
             player.closeInventory();
             return;
@@ -235,6 +256,8 @@ public class QuestGuiManager implements Listener {
         if (!(event.getPlayer() instanceof Player player)) return;
         Quest quest = openGuis.remove(player.getUniqueId());
         if (quest == null) return;
+        approveConfirm.remove(player.getUniqueId());
+        if (!isCurrent(quest)) return;
         // Only the acceptor's open warehouse is auto-saved on close; publisher is read-only
         boolean isAcceptor = quest.acceptorId() != null && quest.acceptorId().equals(player.getUniqueId());
         if (!isAcceptor) return;
@@ -320,7 +343,11 @@ public class QuestGuiManager implements Listener {
     }
 
     private void executeReject(Player player, Quest quest, String reason) {
-        pendingReject.remove(player.getUniqueId());
+        if (!isCurrent(quest) || quest.status() != QuestStatus.SUBMITTED
+                || !quest.publisherId().equals(player.getUniqueId())) {
+            player.sendMessage("§7委托状态已变化，请重新打开仓库。");
+            return;
+        }
         int max = plugin.getConfig().getInt("max-rejects", 5);
         updateQuest(player, quest.reject(max));
 
@@ -342,7 +369,10 @@ public class QuestGuiManager implements Listener {
         if (quest == null) return;
 
         event.setCancelled(true);
-        executeReject(player, quest, event.getMessage());
+        String reason = event.getMessage();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (pendingReject.remove(player.getUniqueId(), quest)) executeReject(player, quest, reason);
+        });
     }
 
     public boolean hasPendingInput(Player player) {
@@ -410,12 +440,32 @@ public class QuestGuiManager implements Listener {
     }
 
     private void updateQuest(Player player, Quest updated) {
-        List<Quest> all = new ArrayList<>(dataManager.loadAll());
-        for (int i = 0; i < all.size(); i++) {
-            if (all.get(i).id().equals(updated.id())) { all.set(i, updated); break; }
+        synchronized (dataManager) {
+            List<Quest> all = new ArrayList<>(dataManager.loadAll());
+            boolean found = false;
+            for (int i = 0; i < all.size(); i++) {
+                Quest current = all.get(i);
+                if (!current.id().equals(updated.id())) continue;
+                if (current.status() == QuestStatus.CANCELLED || current.status() == QuestStatus.COMPLETED) return;
+                all.set(i, updated);
+                found = true;
+                break;
+            }
+            if (!found) return;
+            dataManager.saveAll(all);
         }
-        dataManager.saveAll(all);
-        openGuis.put(player.getUniqueId(), updated);
+        openGuis.computeIfPresent(player.getUniqueId(), (id, shown) -> shown.id().equals(updated.id()) ? updated : shown);
+    }
+
+    private boolean isCurrent(Quest shown) {
+        return dataManager.loadAll().stream().anyMatch(shown::equals);
+    }
+
+    private void closeStaleView(Player player) {
+        openGuis.remove(player.getUniqueId());
+        approveConfirm.remove(player.getUniqueId());
+        player.closeInventory();
+        player.sendMessage("§7委托状态已变化，请重新打开仓库。");
     }
 
     private ItemStack createButton(Material mat, String name) {
