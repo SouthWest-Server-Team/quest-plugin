@@ -123,3 +123,24 @@ model/
 mvnw clean package
 # 输出: target/Quest-1.0.0-SNAPSHOT.jar
 ```
+
+
+### 测试运行期依赖
+
+GUI/事件测试用 Mockito inline 模拟 Player 或 JavaPlugin，需要其方法签名引用的
+MiniMessage、Adventure SLF4J 日志适配、SLF4J API 和 Log4j API。POM 显式声明
+这些 test 依赖，版本与 Leaf 1.21.11 当前 API 元数据对齐；现有 Adventure API
+保持 provided（provided 本身也参与测试类路径），测试库不打进插件 JAR。
+
+复验请使用独立 Maven 缓存。先准备 Leaf API、Towny 等构建前置，再运行：
+
+```bash
+mvn -Dmaven.repo.local=<独立缓存> dependency:go-offline test
+mvn -o -Dmaven.repo.local=<同一独立缓存> package
+```
+
+Leaf 官方快照仓库为 `https://maven.leafmc.one/snapshots/`，可在本次构建的
+Maven settings 中配置。若 Towny 0.103.1.0 坐标在声明仓库不可得，须从
+[Towny 官方发布页](https://github.com/TownyAdvanced/Towny/releases/tag/0.103.1.0)
+取得并校验原 JAR，登记到同一缓存；记录来源、哈希及所用 POM。
+本地最小 POM 不代表上游完整传递依赖已验证，也不代表空缓存单命令自动构建成功。
