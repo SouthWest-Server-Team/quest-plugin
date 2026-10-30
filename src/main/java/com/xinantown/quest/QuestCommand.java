@@ -56,12 +56,23 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
     private boolean handleList(CommandSender sender) {
         List<Quest> all = dataManager.loadAll();
-        List<Quest> open = all.stream().filter(q -> q.status() == QuestStatus.OPEN).toList();
+        // 城邦隔离（A10）：玩家只看到个人委托 + 本城邦的城邦委托；控制台没有城邦 ⇒ 只看个人委托。
+        com.xinantown.quest.town.PlayerTownView viewer =
+                sender instanceof Player viewer2
+                        ? com.xinantown.quest.town.TownQueryBridge.viewOf(
+                                plugin.getTownQueryBridge(), viewer2.getUniqueId())
+                        : com.xinantown.quest.town.PlayerTownView.unknown();
+        List<Quest> open = all.stream()
+                .filter(q -> q.status() == QuestStatus.OPEN)
+                .filter(q -> com.xinantown.quest.town.QuestTownPolicy.visibleInList(q, viewer))
+                .toList();
         if (open.isEmpty()) { sender.sendMessage("§7当前没有可接取的委托。"); return true; }
 
         sender.sendMessage("§6=== 可接取委托 (" + open.size() + ") ===");
         for (Quest q : open) {
-            String type = q.isTownQuest() ? "§b[城邦]" : "§a[个人]";
+            String type = q.isTownQuest()
+                    ? "§b[城邦·" + (q.townName() == null ? "本城" : q.townName()) + "]"
+                    : "§a[个人]";
             String qType = q.isMaterialQuest() ? "§7[材料]" : "§7[建筑]";
             sender.sendMessage(type + qType + " §6" + q.title() + " §7- " + q.publisherName());
             sender.sendMessage("  §7" + q.description() + " §7报酬: $"
@@ -87,15 +98,21 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
         if (found.publisherId().equals(player.getUniqueId())) { player.sendMessage("§c不能接取自己的委托。"); return true; }
 
         if (found.isTownQuest()) {
-            var town = com.palmergames.bukkit.towny.TownyAPI.getInstance().getTown(player);
-            if (town == null) { player.sendMessage("§c城邦委托只能由城邦接取！"); return true; }
-            if (plugin.getViolationManager().isBanned(town.getName())) {
-                long hours = (plugin.getViolationManager().getBanEnd(town.getName()) - System.currentTimeMillis()) / 3600000;
+            var view = com.xinantown.quest.town.TownQueryBridge.viewOf(
+                    plugin.getTownQueryBridge(), player.getUniqueId());
+            if (com.xinantown.quest.town.QuestTownPolicy.isUnownedTownQuest(found)) {
+                player.sendMessage("§c这条城邦委托没有归属城邦（改造前的历史数据），无法接取。"); return true;
+            }
+            if (!view.hasTown()) { player.sendMessage("§c城邦委托只能由城邦接取！(城邦信息不可用)"); return true; }
+            if (!com.xinantown.quest.town.QuestTownPolicy.canRepresent(found, view)) {
+                player.sendMessage("§c只有该城邦的成员才能代表城邦接取委托！"); return true;
+            }
+            String townName = found.townName() != null && !found.townName().isBlank()
+                    ? found.townName() : view.townName();
+            if (plugin.getViolationManager().isBanned(townName)) {
+                long hours = (plugin.getViolationManager().getBanEnd(townName) - System.currentTimeMillis()) / 3600000;
                 player.sendMessage("§c城邦处于违约状态，剩余 " + hours + " 小时。");
                 return true;
-            }
-            if (!town.hasMayor() || !town.getMayor().getUUID().equals(player.getUniqueId())) {
-                player.sendMessage("§c只有市长才能代表城邦接取委托！"); return true;
             }
         }
 
@@ -231,9 +248,17 @@ public class QuestCommand implements CommandExecutor, TabCompleter {
 
         org.bukkit.block.BlockFace facing = player.getFacing().getOppositeFace();
         org.bukkit.Location signLoc = BoardListener.placeWallSign(target.getLocation(), facing, type);
-        Board board = boardManager.createBoard(signLoc, type, QuestFilter.fromString(questFilter));
+        // 城邦绑定（A10）：板子绑定到创建者此刻所在的城邦；未绑定的板子不再展示任何城邦委托。
+        var view = com.xinantown.quest.town.TownQueryBridge.viewOf(
+                plugin.getTownQueryBridge(), player.getUniqueId());
+        String boardTownId = view.hasTown() ? view.townId() : null;
+        Board board = boardManager.createBoard(signLoc, type, QuestFilter.fromString(questFilter), boardTownId);
         String label = questFilter != null ? "(" + questFilter + ")" : "";
-        player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！" + label + " ID: " + board.id());
+        String townLabel = boardTownId != null
+                ? "§7绑定城邦: §b" + view.townName()
+                : "§c未绑定城邦（不展示城邦委托）";
+        player.sendMessage("§a" + (type.equals("center") ? "中央" : "显示") + "告示牌已创建！" + label
+                + " " + townLabel + " §7ID: " + board.id());
         return true;
     }
 

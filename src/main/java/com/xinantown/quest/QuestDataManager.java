@@ -15,10 +15,26 @@ public class QuestDataManager {
     private final Logger logger;
     private final File dataFile;
     private List<Quest> cache;
+    /**
+     * 委托数据变更回调。所有委托状态变更都必然经过 {@link #saveAll}，因此这是本插件
+     * 「委托事实发生变化」的完整信号（用于唤醒依赖委托状态的检测，避免无条件轮询）。
+     */
+    private volatile Runnable changeListener;
 
     public QuestDataManager(File dataFile, Logger logger) {
         this.dataFile = dataFile;
         this.logger = logger;
+    }
+
+    /**
+     * 注册委托数据变更回调；每次成功写入后调用一次。
+     *
+     * <p>回调抛出的异常会被吞掉并记日志，不会影响委托本身的保存行为。
+     *
+     * @param listener 回调，传 {@code null} 表示取消注册
+     */
+    public void setChangeListener(Runnable listener) {
+        this.changeListener = listener;
     }
 
     public synchronized List<Quest> loadAll() {
@@ -30,6 +46,17 @@ public class QuestDataManager {
     public synchronized void saveAll(List<Quest> quests) {
         this.cache = new ArrayList<>(quests);
         saveToDisk(quests);
+        notifyChanged();
+    }
+
+    private void notifyChanged() {
+        Runnable listener = changeListener;
+        if (listener == null) return;
+        try {
+            listener.run();
+        } catch (RuntimeException failure) {
+            logger.warning("Quest change listener failed: " + failure);
+        }
     }
 
     private List<Quest> loadFromDisk() {
@@ -60,7 +87,11 @@ public class QuestDataManager {
                         q.contains("acceptorId") ? UUID.fromString(q.getString("acceptorId")) : null,
                         q.getString("acceptorName", null),
                         q.getBoolean("isTownAcceptor", false),
-                        q.getInt("rejectCount", 0)));
+                        q.getInt("rejectCount", 0),
+                        // 城邦归属（A10）：改造前落盘的数据没有这两个键 ⇒ null ⇒ 「无归属城邦委托」，
+                        // 数据保留、不静默丢弃（可见性/代表权规则见 QuestTownPolicy）。
+                        q.getString("townId", null),
+                        q.getString("townName", null)));
             } catch (Exception e) {
                 logger.warning("Skipping invalid quest entry: " + key);
             }
@@ -88,6 +119,8 @@ public class QuestDataManager {
             if (q.acceptorName() != null) qs.set("acceptorName", q.acceptorName());
             qs.set("isTownAcceptor", q.isTownAcceptor());
             qs.set("rejectCount", q.rejectCount());
+            if (q.townId() != null) qs.set("townId", q.townId());
+            if (q.townName() != null) qs.set("townName", q.townName());
         }
         try { cfg.save(dataFile); } catch (IOException e) {
             logger.severe("Failed to save quests: " + e.getMessage());
