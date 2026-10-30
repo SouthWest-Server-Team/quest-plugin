@@ -80,6 +80,29 @@
         <dependency><groupId>net.kyori</groupId><artifactId>adventure-api</artifactId><version>4.26.1</version><scope>provided</scope></dependency>
         <dependency><groupId>net.md-5</groupId><artifactId>bungeecord-chat</artifactId><version>1.21-R0.2-deprecated+build.21</version><scope>provided</scope></dependency>
         <dependency><groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId><version>2.4</version><scope>test</scope></dependency>
+        <!-- 结算调用点测试：经济系统替身 + Bukkit 静态替身（mockStatic）。
+             Mockito 5 默认即 inline mock maker，可 mock static / final，无需 mockito-inline。 -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- 给 Bukkit 接口 mock 用的 adventure 运行时：Player/CommandSender 等方法签名里引用了
+             minimessage 的 TagResolver、gson 的 GsonComponentSerializer（服务端自己带，API jar 不带）。
+             仅 test scope，`provided` 的引用不会进产物。 -->
+        <dependency>
+            <groupId>net.kyori</groupId>
+            <artifactId>adventure-text-minimessage</artifactId>
+            <version>4.26.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.kyori</groupId>
+            <artifactId>adventure-text-serializer-gson</artifactId>
+            <version>4.26.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
