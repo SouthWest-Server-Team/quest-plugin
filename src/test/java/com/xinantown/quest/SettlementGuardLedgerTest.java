@@ -12,10 +12,10 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -27,15 +27,16 @@ import static org.mockito.Mockito.verify;
  *
  * <p>四类守卫，判据一律是「账本序列 + {@code status()}」（不是「没抛异常」）：</p>
  * <ol>
- *   <li><b>余额不足</b>：发布（{@code BoardMenuHandler.confirmPublish}）、接取（{@code BoardAcceptHandler.accept} /
- *       {@code QuestCommand.handleAccept}）—— 发钱之前先问 {@code has()}，问不过就一分别动；</li>
- *   <li><b>批允许方 / 状态</b>：审批与终止的守卫在点击入口 {@code QuestGuiManager.onInventoryClick}
- *       （{@code isPublisher && status == SUBMITTED}）—— 非发布方批、非 SUBMITTED 批都不结算；</li>
+ *   <li><b>余额不足 / 经济不可用</b>：发布（{@code BoardMenuHandler.confirmPublish}）、接取（{@code BoardAcceptHandler.accept} /
+ *       {@code QuestCommand.handleAccept}）—— 发钱之前先问 {@code has()}，问不过就一分别动；{@code econ == null} 时同理；</li>
+ *   <li><b>批允许方 / 状态 / 终态</b>：审批与终止的守卫在点击入口 {@code QuestGuiManager.onInventoryClick}
+ *       （{@code isPublisher && status == SUBMITTED}）—— 非发布方批、非 SUBMITTED 批都不结算；
+ *       COMPLETED / CANCELLED 后仓库关不住（{@code openWarehouse} / 点击入口两处），强行点取消也不重启结算；</li>
  *   <li><b>接取前置</b>：主手非空、自接、城邦委托非本城成员（无代表权）、城邦被封禁；</li>
  *   <li><b>终止门槛</b>：驳回累计未达 {@code max-rejects - 1} 时不允许终止。</li>
  * </ol>
  *
- * <p>为了让「拒绝」不是空断言，本类同时给了三条<b>允许路径对照</b>：走同一个点击驱动，
+ * <p>为了让「拒绝」不是空断言，本类同时给了两条<b>允许路径对照</b>（审批完成、达门槛终止）：走同一个点击驱动，
  * 该结算时确实结算成 4 笔 —— 若驱动本身失效，对照用例会先红。</p>
  *
  * <p>基准数据同 {@code SettlementHarness}：{@code deposit = 100 / reward = 500}，发布预扣 600，
@@ -166,13 +167,18 @@ class SettlementGuardLedgerTest {
             h.acceptViaBoard(acceptor, h.quest());
             h.submitViaGui(acceptor, h.quest());     // 接取方的仓库仍开着，指向 SUBMITTED
 
-            assertEquals(-1, h.buttonSlot("§a同意"), "接取方视角不应渲染同意按钮");
+            // SUBMITTED 下接取方再开仓库会被锁（openWarehouse 直接 return），点不到任何按钮：
+            // 这条断言钉的是「锁定提示」本身，不是「ACCEPTED 视图里恰好没有同意按钮」。
+            h.openWarehouse(acceptor, h.quest());
+            verify(acceptor).sendMessage(contains("委托已提交，仓库已锁定"));
+
             h.clickForced(acceptor, 48, "§a同意");       // 直接伪造该槽位的按钮点击
             h.clickForced(acceptor, 49, "§a确认同意");   // 守卫若被改坏，两段确认会被走完
 
             assertEquals(List.of("WITHDRAW 发布方 600.0", "WITHDRAW 接取方 100.0"), h.ledgerLines(),
                     "非发布方批：不得有任何结算调用");
             assertEquals(QuestStatus.SUBMITTED, h.quest().status(), "状态不许被推到 COMPLETED");
+            verify(acceptor, never()).sendMessage(contains("委托已完成"));
         }
     }
 
@@ -189,12 +195,12 @@ class SettlementGuardLedgerTest {
             h.submitViaGui(acceptor, h.quest());
 
             h.openWarehouse(stranger, h.quest());     // 路人能开仓库（只读），但没按钮
-            assertEquals(-1, h.buttonSlot("§a同意"));
             h.clickForced(stranger, 48, "§a同意");
             h.clickForced(stranger, 49, "§a确认同意");
 
             assertEquals(List.of("WITHDRAW 发布方 600.0", "WITHDRAW 接取方 100.0"), h.ledgerLines());
             assertEquals(QuestStatus.SUBMITTED, h.quest().status());
+            verify(stranger, never()).sendMessage(contains("委托已完成"));
         }
     }
 
@@ -220,23 +226,31 @@ class SettlementGuardLedgerTest {
     }
 
     @Test
-    @DisplayName("状态不符·发布方在 OPEN 上点取消：不结算，仍是 OPEN")
-    void publisherCannotCancelOpenQuestThroughWarehouse() {
+    @DisplayName("状态不符·委托已 COMPLETED：仓库不开、强行点取消也不再退款")
+    void publisherCannotCancelCompletedQuestThroughWarehouse() {
         try (SettlementHarness h = new SettlementHarness(dataDir)) {
             var publisher = h.player("发布方");
+            var acceptor = h.player("接取方");
 
-            Quest quest = h.publish(publisher, 500, 100);
-            h.openWarehouse(publisher, quest);       // OPEN 状态下仓库里有取消按钮
-            int slot = h.buttonSlot("§c取消委托");
-            assertTrue(slot >= 0, "OPEN 时发布方视角应渲染取消按钮");
+            h.publish(publisher, 500, 100);
+            h.acceptViaBoard(acceptor, h.quest());
+            assertTrue(h.submitViaGui(acceptor, h.quest()), "接取方应能提交");
+            assertTrue(h.approveViaGui(publisher, h.quest()), "发布方应能两段确认同意");
+            assertEquals(QuestStatus.COMPLETED, h.quest().status());
 
-            h.clickButton(publisher, "§c取消委托");
+            List<String> settled = h.ledgerLines();   // 完成时的 4 笔，之后一笔都不许多
+            assertEquals(4, settled.size(), "前提：完成路径确实结算了 4 笔");
 
-            // 事实：OPEN + 取消 → 只退发布方押金（既有调用点用例 withdrawBeforeAccepted 已钉住金额），
-            // 这里钉的是「不走到任何罚金路径」——赔给接取方的那两笔绝不出现。
-            assertEquals(List.of("WITHDRAW 发布方 600.0", "DEPOSIT 发布方 100.0"), h.ledgerLines(),
-                    "未被接取时没有罚金收付对象");
-            assertEquals(QuestStatus.CANCELLED, h.quest().status());
+            // 守卫一（openWarehouse）：终态不再开仓库 —— 连按钮都不给渲染
+            h.openWarehouse(publisher, h.quest());
+            verify(publisher).sendMessage(contains("该委托已结束，仓库已关闭"));
+
+            // 守卫二（onInventoryClick）：陈旧视图上强行点取消，必须被终态守卫拦下
+            h.clickForced(publisher, 53, "§c取消委托");
+
+            assertEquals(settled, h.ledgerLines(), "终态下再点取消不得重启结算（既不退押金也不罚金）");
+            assertEquals(QuestStatus.COMPLETED, h.quest().status(), "状态不许被改回 CANCELLED");
+            verify(publisher, never()).sendMessage(contains("委托已撤回"));
         }
     }
 
@@ -344,6 +358,26 @@ class SettlementGuardLedgerTest {
         }
     }
 
+    @Test
+    @DisplayName("城邦委托·城邦被封禁（命令路径）：/quest accept 同样被拒，账本为空")
+    void townQuestAcceptRejectedWhenTownBannedViaCommand() {
+        try (SettlementHarness h = new SettlementHarness(dataDir)) {
+            var publisher = h.player("城邦发布方");
+            var member = h.player("西城成员");
+
+            h.seedTownQuest(publisher, "town-west", "西城", 500, 100);
+            h.setPlayerTown(member, PlayerTownView.of("town-west", "西城", true));  // 代表权通过
+            h.banTown("西城", 12);
+
+            Quest after = h.acceptViaCommand(member, h.quest());
+
+            assertTrue(h.ledgerLines().isEmpty(), "命令入口的封禁守卫在 withdraw 之前：一分钱不动");
+            assertEquals(QuestStatus.OPEN, after.status());
+            assertNull(after.acceptorId());
+            verify(member).sendMessage(contains("城邦处于违约状态"));
+        }
+    }
+
     // ==================== 4. 终止门槛 ====================
 
     @Test
@@ -389,7 +423,7 @@ class SettlementGuardLedgerTest {
     }
 
     @Test
-    @DisplayName("终止门槛·接取方点终止：非发布方不结算")
+    @DisplayName("终止门槛·接取方点终止：非发布方不结算，仍 SUBMITTED")
     void acceptorCannotTerminate() {
         try (SettlementHarness h = new SettlementHarness(dataDir)) {
             var publisher = h.player("发布方");
@@ -397,15 +431,58 @@ class SettlementGuardLedgerTest {
 
             h.publish(publisher, 500, 100);
             h.acceptViaBoard(acceptor, h.quest());
-            h.submitViaGui(acceptor, h.quest());
-            h.withRejectCount(h.quest(), 4);          // 门槛已到，但点的人不是发布方
+            // 「驳回已 4/5」必须在提交**之前**落盘：提交后再改盘，接取方那个还开着的仓库里
+            // 仍是旧对象 → isCurrent() 为 false → 点击会被 closeStaleView 提前挡掉，
+            // 根本到不了终止守卫（那是假绿）。放在提交前，SUBMITTED 的视图本身带着 4/5。
+            h.withRejectCount(h.quest(), 4);
+            assertTrue(h.submitViaGui(acceptor, h.quest()), "接取方应能提交");
 
-            h.openWarehouse(acceptor, h.quest());     // 接取方视角仓库（SUBMITTED 会被锁，故不依赖按钮）
-            h.clickForced(acceptor, 50, "§4终止委托");
+            h.clickForced(acceptor, 50, "§4终止委托");   // 门槛已到，但点的人不是发布方
 
             assertEquals(List.of("WITHDRAW 发布方 600.0", "WITHDRAW 接取方 100.0"), h.ledgerLines(),
                     "非发布方终止：不得退款");
             assertEquals(QuestStatus.SUBMITTED, h.quest().status());
+            // 旁证：点击确实走到了按钮分发（而非被陈旧视图挡回），且没有触发终止结算
+            verify(acceptor, never()).sendMessage(contains("委托状态已变化"));
+            verify(acceptor, never()).sendMessage(contains("委托已终止"));
+        }
+    }
+
+    // ==================== 5. 经济服务不可用 ====================
+
+    @Test
+    @DisplayName("经济不可用·发布：不建单、账本为空")
+    void publishBlockedWhenEconomyUnavailable() {
+        try (SettlementHarness h = new SettlementHarness(dataDir)) {
+            var publisher = h.player("发布方");
+            h.setEconomyAvailable(false);
+
+            Quest created = h.publishOrNull(publisher, 500, 100);
+
+            assertNull(created, "经济未就绪不应建单");
+            assertEquals(0, h.questCount(), "盘上不应留下委托");
+            assertTrue(h.ledgerLines().isEmpty(), "没有经济接口就发不出一笔调用");
+            verify(publisher).sendMessage(contains("经济系统未就绪"));
+        }
+    }
+
+    @Test
+    @DisplayName("经济不可用·命令接取：被拒，账本只有发布预扣，仍是 OPEN")
+    void acceptViaCommandBlockedWhenEconomyUnavailable() {
+        try (SettlementHarness h = new SettlementHarness(dataDir)) {
+            var publisher = h.player("发布方");
+            var acceptor = h.player("接取方");
+
+            h.publish(publisher, 500, 100);
+            h.setEconomyAvailable(false);
+
+            Quest after = h.acceptViaCommand(acceptor, h.quest());
+
+            assertEquals(List.of("WITHDRAW 发布方 600.0"), h.ledgerLines(),
+                    "econ == null 时必须在 withdraw 之前 return");
+            assertEquals(QuestStatus.OPEN, after.status());
+            assertNull(after.acceptorId());
+            verify(acceptor).sendMessage(contains("经济系统未就绪"));
         }
     }
 }
