@@ -10,10 +10,13 @@ import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.RegisteredServiceProvider;
@@ -69,6 +72,8 @@ final class SettlementHarness implements AutoCloseable {
     private final MockedStatic<Bukkit> bukkit;
     private final MockedStatic<TownyAPI> towny;
     private final org.mockito.MockedConstruction<QuestScroll> scrolls;
+    /** 按钮物品：{@code createButton} 会真造 ItemStack，无服务端时撞 RegistryAccess，故拦截构造。 */
+    private final org.mockito.MockedConstruction<ItemStack> items;
 
     private QuestPlugin plugin;
     private QuestDataManager data;
@@ -83,6 +88,13 @@ final class SettlementHarness implements AutoCloseable {
     private final List<Money> ledger = new ArrayList<>();
     private boolean canAfford = true;
     private boolean economyAvailable = true;
+    /** 玩家城邦视图（默认「不知道」）：城邦委托的接取前置用它区分「非本城邦成员 / 被封禁」。 */
+    private final Map<UUID, com.xinantown.quest.town.PlayerTownView> towns = new HashMap<>();
+    /** 点击路径专用：GUID 状态（{@code openGuis}）在实例里，开一次得用同一个实例点。 */
+    private QuestGuiManager clickGui;
+    /** 最近一次 {@code openWarehouse} 造出的库存与其中已放好的按钮。 */
+    private Inventory clickInventory;
+    private Map<Integer, ItemStack> clickSlots = new HashMap<>();
 
     SettlementHarness(Path dataDir) {
         bukkit = mockStatic(Bukkit.class);
@@ -90,6 +102,9 @@ final class SettlementHarness implements AutoCloseable {
         // 委托卷（BOOK + PDC）与本卡无关：真造 ItemStack 会撞 Paper 的 RegistryAccess（无服务端）。
         // 用「构造拦截」把 new QuestScroll(...) 换成空壳 —— 只影响卷，不碰金额。
         scrolls = org.mockito.Mockito.mockConstruction(QuestScroll.class);
+        // 仓库按钮同理：createButton 是 new ItemStack(mat) + setDisplayName，这里把构造换成
+        // 「带显示名状态的替身」，按钮文案仍由生产代码决定，测试只读不改。
+        items = org.mockito.Mockito.mockConstruction(ItemStack.class, (mock, ctx) -> stubButton(mock, ctx.arguments()));
         try {
             init(dataDir);
         } catch (RuntimeException | Error e) {
@@ -139,6 +154,16 @@ final class SettlementHarness implements AutoCloseable {
         when(itemFactory.getItemMeta(any(Material.class))).thenAnswer(i -> freshItemMeta());
         bukkit.when(Bukkit::getItemFactory).thenReturn(itemFactory);
 
+        // 点击路径要的「打开仓库」：造一个记录 setItem 的库存替身（按钮位置由生产代码决定，不在这里写死）。
+        bukkit.when(() -> Bukkit.createInventory(any(), anyInt(), anyString()))
+                .thenAnswer(i -> trackedInventory(i.getArgument(1)));
+
+        // —— 交互层城邦桥替身：按玩家 UUID 返回预置的城邦视图，默认「不知道」——
+        com.xinantown.quest.town.TownQueryBridge townBridge = mock(com.xinantown.quest.town.TownQueryBridge.class);
+        when(townBridge.playerTown(any(UUID.class)))
+                .thenAnswer(i -> towns.getOrDefault(i.getArgument(0, UUID.class),
+                        com.xinantown.quest.town.PlayerTownView.unknown()));
+
         // —— Towny 静态替身：个人委托，取不到城邦 ——
         TownyAPI townyApi = mock(TownyAPI.class);
         when(townyApi.getTown(any(Player.class))).thenReturn(null);
@@ -152,7 +177,8 @@ final class SettlementHarness implements AutoCloseable {
         when(config.getDouble(anyString(), anyDouble()))
                 .thenAnswer(i -> ((Number) configValues.getOrDefault(i.getArgument(0, String.class), i.getArgument(1))).doubleValue());
 
-        plugin = newPlugin(data, warehouse, violations, boardManager, config, logger);
+        plugin = newPlugin(data, warehouse, violations, boardManager, config, logger, townBridge);
+        clickGui = new QuestGuiManager(plugin);
     }
 
     /**
@@ -166,15 +192,18 @@ final class SettlementHarness implements AutoCloseable {
         private BoardManager boards;
         private FileConfiguration config;
         private Logger logger;
+        private com.xinantown.quest.town.TownQueryBridge townBridge;
 
         void init(QuestDataManager data, WarehouseManager warehouse, ViolationManager violations,
-                  BoardManager boards, FileConfiguration config, Logger logger) {
+                  BoardManager boards, FileConfiguration config, Logger logger,
+                  com.xinantown.quest.town.TownQueryBridge townBridge) {
             this.data = data;
             this.warehouse = warehouse;
             this.violations = violations;
             this.boards = boards;
             this.config = config;
             this.logger = logger;
+            this.townBridge = townBridge;
         }
 
         @Override public QuestDataManager getDataManager() { return data; }
@@ -183,6 +212,7 @@ final class SettlementHarness implements AutoCloseable {
         @Override public BoardManager getBoardManager() { return boards; }
         @Override public FileConfiguration getConfig() { return config; }
         @Override public Logger getLogger() { return logger; }
+        @Override public com.xinantown.quest.town.TownQueryBridge getTownQueryBridge() { return townBridge; }
     }
 
     /**
@@ -191,9 +221,10 @@ final class SettlementHarness implements AutoCloseable {
      */
     private static QuestPlugin newPlugin(QuestDataManager data, WarehouseManager warehouse,
                                         ViolationManager violations, BoardManager boards,
-                                        FileConfiguration config, Logger logger) {
+                                        FileConfiguration config, Logger logger,
+                                        com.xinantown.quest.town.TownQueryBridge townBridge) {
         FakePlugin plugin = new org.objenesis.ObjenesisStd().newInstance(FakePlugin.class);
-        plugin.init(data, warehouse, violations, boards, config, logger);
+        plugin.init(data, warehouse, violations, boards, config, logger, townBridge);
         setPluginMeta(plugin, "Quest");
         return plugin;
     }
@@ -388,7 +419,171 @@ final class SettlementHarness implements AutoCloseable {
         return economy;
     }
 
+    // ==================== 点击路径（真实入口：QuestGuiManager.onInventoryClick） ====================
+    //
+    // 审批/终止的「谁有权、什么状态」守卫写在**点击入口**（onInventoryClick）里，不在
+    // handleApprove/handleTerminate 内。反射直调私有方法会绕过守卫，所以拒绝路径必须走这条路：
+    // openWarehouse 开仓库 → 在主手/按钮位置点下去。
+
+    /** 以该玩家身份打开委托仓库（命中 {@code QuestGuiManager.openWarehouse}）。 */
+    void openWarehouse(Player player, Quest quest) {
+        clickGui.openWarehouse(player, quest);
+    }
+
+    /** 当前仓库里显示该按钮文案的槽位；没有这个按钮返回 -1（= 生产代码根本没渲染它）。 */
+    int buttonSlot(String label) {
+        for (var e : clickSlots.entrySet()) {
+            ItemStack item = e.getValue();
+            if (item == null) continue;
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null && label.equals(meta.getDisplayName())) return e.getKey();
+        }
+        return -1;
+    }
+
+    /** 点「真实存在」的按钮；按钮不存在（被守卫挡掉未渲染）时返回 false，不伪造点击。 */
+    boolean clickButton(Player player, String label) {
+        int slot = buttonSlot(label);
+        if (slot < 0) return false;
+        clickSlot(player, slot, label);
+        return true;
+    }
+
+    /**
+     * 在没有该按钮的槽位上强行点一个「文案像按钮」的物品 —— 用来验证守卫本身，
+     * 而不是只验证「按钮没渲染」。生产代码会读 {@code getCurrentItem()} 的显示名。
+     */
+    void clickForced(Player player, int slot, String label) {
+        clickSlot(player, slot, label);
+    }
+
+    /** 接取方在仓库里点「提交委托」（ACCEPTED → SUBMITTED）。 */
+    boolean submitViaGui(Player acceptor, Quest quest) {
+        openWarehouse(acceptor, quest);
+        return clickButton(acceptor, "§a提交委托");
+    }
+
+    /** 发布方走完整的两段确认（同意 → 确认同意）。 */
+    boolean approveViaGui(Player publisher, Quest quest) {
+        openWarehouse(publisher, quest);
+        if (!clickButton(publisher, "§a同意")) return false;
+        return clickButton(publisher, "§a确认同意");
+    }
+
+    // ==================== 前置状态 / 城邦视图 ====================
+
+    /** 预置玩家此刻的城邦视图（接取城邦委托时的代表权判定输入）。 */
+    void setPlayerTown(Player player, com.xinantown.quest.town.PlayerTownView view) {
+        towns.put(player.getUniqueId(), view);
+    }
+
+    /** 造一个「主手拿着东西」的玩家：接取守卫要求空手。 */
+    Player playerHolding(String name, Material material) {
+        Player player = player(name);
+        ItemStack held = mock(ItemStack.class);
+        when(held.getType()).thenReturn(material);
+        when(player.getInventory().getItemInMainHand()).thenReturn(held);
+        return player;
+    }
+
+    /** 城邦被封禁：接取城邦委托时的违约守卫。 */
+    void banTown(String townName, long hours) {
+        when(violations.isBanned(anyString())).thenReturn(true);
+        when(violations.getBanEnd(anyString()))
+                .thenReturn(System.currentTimeMillis() + hours * 3_600_000L);
+    }
+
+    /** 直接落一条已绑定城邦的 OPEN 委托（不走发布流程，因此不产生任何资金调用）。 */
+    Quest seedTownQuest(Player publisher, String townId, String townName, double reward, double deposit) {
+        long now = System.currentTimeMillis();
+        Quest quest = new Quest(java.util.UUID.randomUUID(), "城邦委托", publisher.getUniqueId(),
+                publisher.getName(), true, "material", "橡木原木 × 64", reward, deposit,
+                now + 86_400_000L, now + 86_400_000L, QuestStatus.OPEN,
+                null, null, false, 0, townId, townName);
+        List<Quest> all = new ArrayList<>(data.loadAll());
+        all.add(quest);
+        data.saveAll(all);
+        return quest;
+    }
+
+    /** 把委派的驳回次数改成给定值（模拟「已经驳回 n 次」的现状，不动钱）。 */
+    Quest withRejectCount(Quest q, int rejects) {
+        Quest updated = new Quest(q.id(), q.title(), q.publisherId(), q.publisherName(), q.isTownQuest(),
+                q.questType(), q.description(), q.reward(), q.deposit(),
+                q.acceptDeadline(), q.completeDeadline(), q.status(),
+                q.acceptorId(), q.acceptorName(), q.isTownAcceptor(), rejects,
+                q.townId(), q.townName());
+        List<Quest> all = new ArrayList<>(data.loadAll());
+        for (int i = 0; i < all.size(); i++) {
+            if (all.get(i).id().equals(q.id())) { all.set(i, updated); break; }
+        }
+        data.saveAll(all);
+        return updated;
+    }
+
     // ==================== 内部 ====================
+
+    /**
+     * 按钮替身：{@code createButton} 调 {@code new ItemStack(mat)} → {@code getItemMeta().setDisplayName(name)}
+     * → {@code setItemMeta(meta)}。这里让这条链仍「记得」写进去的文案，供测试读取。
+     */
+    private static void stubButton(ItemStack mock, List<?> args) {
+        String[] display = new String[1];
+        ItemMeta meta = mock(ItemMeta.class);
+        when(mock.hasItemMeta()).thenReturn(true);
+        when(mock.getItemMeta()).thenReturn(meta);
+        when(meta.hasDisplayName()).thenAnswer(i -> display[0] != null);
+        when(meta.getDisplayName()).thenAnswer(i -> display[0]);
+        org.mockito.Mockito.doAnswer(i -> {
+            display[0] = i.getArgument(0, String.class);
+            return null;
+        }).when(meta).setDisplayName(anyString());
+        Material type = (!args.isEmpty() && args.get(0) instanceof Material m) ? m : Material.AIR;
+        when(mock.getType()).thenReturn(type);
+    }
+
+    /** 造一个记录 setItem 的库存替身：按钮位置完全由生产代码（openWarehouse）决定。 */
+    private Inventory trackedInventory(int size) {
+        Inventory inv = mock(Inventory.class);
+        Map<Integer, ItemStack> slots = new HashMap<>();
+        when(inv.getSize()).thenReturn(size);
+        when(inv.getItem(anyInt())).thenAnswer(i -> slots.get(i.getArgument(0, Integer.class)));
+        org.mockito.Mockito.doAnswer(i -> {
+            slots.put(i.getArgument(0, Integer.class), i.getArgument(1));
+            return null;
+        }).when(inv).setItem(anyInt(), any());
+        clickInventory = inv;
+        clickSlots = slots;
+        return inv;
+    }
+
+    /** 造一次点击事件并交给生产代码的入口（{@code onInventoryClick}）。 */
+    private void clickSlot(Player player, int slot, String label) {
+        Inventory top = clickInventory;
+        if (top == null) throw new IllegalStateException("没有打开仓库就点按钮");
+
+        ItemStack item = mock(ItemStack.class);
+        ItemMeta meta = mock(ItemMeta.class);
+        when(item.hasItemMeta()).thenReturn(true);
+        when(item.getItemMeta()).thenReturn(meta);
+        when(item.getType()).thenReturn(Material.PAPER);
+        when(meta.hasDisplayName()).thenReturn(true);
+        when(meta.getDisplayName()).thenReturn(label);
+
+        InventoryView view = mock(InventoryView.class);
+        when(view.getTitle()).thenReturn("§8委托仓库 - 测试");
+        when(view.getTopInventory()).thenReturn(top);
+        when(view.getBottomInventory()).thenReturn(mock(Inventory.class));
+
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.getWhoClicked()).thenReturn(player);
+        when(event.getView()).thenReturn(view);
+        when(event.getInventory()).thenReturn(top);
+        when(event.getClickedInventory()).thenReturn(top);
+        when(event.getSlot()).thenReturn(slot);
+        when(event.getCurrentItem()).thenReturn(item);
+        clickGui.onInventoryClick(event);
+    }
 
     private EconomyResponse record(String op, Object who, Object amount) {
         UUID id = ((OfflinePlayer) who).getUniqueId();
@@ -433,6 +628,7 @@ final class SettlementHarness implements AutoCloseable {
     @Override
     public void close() {
         scrolls.close();
+        items.close();
         towny.close();
         bukkit.close();
     }
